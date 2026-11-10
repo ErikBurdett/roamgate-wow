@@ -1,0 +1,3 @@
+<Bindings>
+  <Binding name="ROAMGATE_TOGGLE" header="ROAMGATE">RoamgateToggle()</Binding>
+</Bindings>

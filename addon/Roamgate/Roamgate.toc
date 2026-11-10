@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: |cffd8b76aRoamgate|r
+## Notes: Your local workspaces, conversations and agent questions in Azeroth.
+## Author: Erik Burdett
+## Version: 0.1.0
+## SavedVariables: RoamgateDB
+Config.lua
+Transport.lua
+UI.lua
+Core.lua
+Bindings.xml

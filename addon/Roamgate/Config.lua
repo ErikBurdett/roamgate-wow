@@ -1,0 +1,3 @@
+local _, RG = ...
+RG.SLOT_COUNT = 2048
+RG.VERSION = "0.1.0"

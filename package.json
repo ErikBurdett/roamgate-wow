@@ -1,0 +1,17 @@
+{
+  "name": "roamgate-wow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Native WoW Forever workspace for the local Roamgate and Herdr session",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:lua": "lua5.1 tests/addon.lua",
+    "check": "npm test && npm run test:lua",
+    "doctor": "node bridge/main.mjs doctor",
+    "start": "node bridge/main.mjs run",
+    "package": "node scripts/install.mjs --stage dist/AddOns"
+  },
+  "dependencies": { "ws": "8.22.2" }
+}
