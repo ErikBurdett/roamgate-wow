@@ -33,14 +33,11 @@ local function label(parent, size, color, font)
     return t
 end
 local function panel(parent, name)
-    local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
-    f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 32, edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 } })
-    f:SetBackdropColor(INK[1], INK[2], INK[3], 0.98); f:SetBackdropBorderColor(0.46, 0.39, 0.23, 1)
-    return f
+    return RG.Theme.Panel(parent, name)
 end
 local function button(parent, text, width, fn)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    b:SetSize(width, 26); b:SetText(text); b:SetScript("OnClick", fn)
+    b:SetSize(width, 26); b:SetText(text); b:SetScript("OnClick", function(...) RG:Activate("work"); if fn then return fn(...) end end)
     return b
 end
 local function edit(parent, name, multi)
@@ -48,9 +45,41 @@ local function edit(parent, name, multi)
     e:SetAutoFocus(false); e:SetMultiLine(multi or false); e:SetFont("Fonts\\ARIALN.TTF", 17, "")
     e:SetTextColor(0.92, 0.90, 0.82); e:SetMaxBytes(multi and 6000 or 100)
     e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    e:SetScript("OnEditFocusGained", function() RG:Activate("work") end)
     return e
 end
 function U:IsShown() return self.frame and self.frame:IsShown() end
+function U.QuestionMode(s)
+    if not s then return "none" end
+    if s.questionMode then return s.questionMode end
+    local screen = s.screen or ""
+    if s.kind == "codex" and screen:find("Queued follow%-up inputs") and screen:find("to answer", 1, true) then return "queued" end
+    return s.status == "blocked" and "visible" or "none"
+end
+function U:SaveDraft()
+    if not self.draftPane or not self.composer then return end
+    RoamgateDB.answerDrafts = RoamgateDB.answerDrafts or {}
+    local drafts = self.draftMode == "answer" and RoamgateDB.answerDrafts or RoamgateDB.drafts
+    drafts[self.draftPane] = self.composer:GetText()
+end
+function U:SyncComposer()
+    if not self.composer then return end
+    local s = RG.data and RG.data.selected
+    local mode = not self.newMode and self.view == "questions" and s and s.pane == RG.selected and self.QuestionMode(s) == "visible" and "answer" or "message"
+    if self.draftPane == RG.selected and self.draftMode == mode then return end
+    self:SaveDraft(); self.draftPane, self.draftMode = RG.selected, mode
+    RoamgateDB.answerDrafts = RoamgateDB.answerDrafts or {}
+    local drafts = mode == "answer" and RoamgateDB.answerDrafts or RoamgateDB.drafts
+    self.composer:SetText(RG.selected and drafts[RG.selected] or "")
+end
+function U:TryOpenQuestion()
+    local intent, s = self.questionIntent, RG.data and RG.data.selected
+    if not intent then return end
+    if intent.pane ~= RG.selected or self.view ~= "questions" or GetTime() > intent.untilTime or not self:IsShown() then self.questionIntent = nil; return end
+    if not s or s.pane ~= RG.selected or s.cached or not RG.Transport:IsFresh(RG.data) or RG.Transport.pending then return end
+    self.questionIntent = nil
+    if self.QuestionMode(s) == "queued" then RG.Transport:Send("key", "shift+left") end
+end
 function U:SaveScroll()
     if self.contentLocation and self.scroll then
         self.scrollPositions[self.contentLocation] = {offset=self.scroll:GetVerticalScroll(), bottom=self.scroll:GetVerticalScrollRange()-self.scroll:GetVerticalScroll()<45}
@@ -66,24 +95,28 @@ function U:Build()
     f:SetPoint("CENTER", UIParent, "CENTER", RoamgateDB.x or 0, RoamgateDB.y or 0)
     f:SetFrameStrata("DIALOG"); f:SetMovable(true); f:SetClampedToScreen(true); f:EnableMouse(true)
     f:SetResizable(true); f:SetResizeBounds(940, 650, 1600, 1100)
+    RG.Theme.Book(f, 290)
+    f:SetScript("OnMouseDown", function() RG:Activate("work") end)
     table.insert(UISpecialFrames, "RoamgateWindow")
     local titlebar = CreateFrame("Frame", nil, f); titlebar:SetPoint("TOPLEFT", 8, -7); titlebar:SetPoint("TOPRIGHT", -40, -7); titlebar:SetHeight(58)
     titlebar:EnableMouse(true); titlebar:RegisterForDrag("LeftButton")
-    titlebar:SetScript("OnDragStart", function() f:StartMoving() end)
+    titlebar:SetScript("OnDragStart", function() RG:Activate("work"); f:StartMoving() end)
     titlebar:SetScript("OnDragStop", function()
         f:StopMovingOrSizing(); local x, y = f:GetCenter(); local px, py = UIParent:GetCenter()
         RoamgateDB.x, RoamgateDB.y = x - px, y - py
     end)
     local emblem = titlebar:CreateTexture(nil, "ARTWORK"); emblem:SetSize(44, 44); emblem:SetPoint("LEFT", 12, 0)
-    emblem:SetTexture("Interface\\Icons\\Spell_Arcane_TeleportStormWind")
+    emblem:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     local title = label(titlebar, 24); title:SetPoint("TOPLEFT", 70, -7); title:SetText("ROAMGATE")
-    local sub = label(titlebar, 12, BLUE); sub:SetPoint("TOPLEFT", 71, -34); sub:SetText("YOUR WORK, WITHIN AZEROTH")
+    local sub = label(titlebar, 12, BLUE); sub:SetPoint("TOPLEFT", 71, -34); sub:SetText("THE WORKING GRIMOIRE")
+    local guideButton = button(titlebar, "Adventurer's Grimoire", 190, function() RoamgateGuideToggle() end); guideButton:SetPoint("LEFT", 345, -1)
     self.connection = label(titlebar, 13, {0.65, 0.71, 0.64}); self.connection:SetPoint("TOPRIGHT", -10, -9)
     self.summary = label(titlebar, 12, {0.65, 0.65, 0.61}); self.summary:SetPoint("TOPRIGHT", -10, -31)
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton"); close:SetPoint("TOPRIGHT", -2, -2)
     local line = f:CreateTexture(nil, "ARTWORK"); line:SetColorTexture(0.48, 0.39, 0.21, 0.6); line:SetHeight(1); line:SetPoint("TOPLEFT", 16, -67); line:SetPoint("TOPRIGHT", -16, -67)
 
     local side = panel(f); side:SetPoint("TOPLEFT", 12, -77); side:SetPoint("BOTTOMLEFT", 12, 42); side:SetWidth(278)
+    RG.Theme.Page(side, false)
     local searchBox = panel(side); searchBox:SetPoint("TOPLEFT", 9, -9); searchBox:SetPoint("TOPRIGHT", -9, -9); searchBox:SetHeight(34)
     self.search = edit(searchBox, "RoamgateSearch"); self.search:SetPoint("TOPLEFT", 10, -5); self.search:SetPoint("BOTTOMRIGHT", -8, 5)
     self.searchHint = label(searchBox, 14, {0.53, 0.53, 0.49}, "Fonts\\ARIALN.TTF"); self.searchHint:SetPoint("LEFT", 10, 0); self.searchHint:SetText("Search workspaces and sessions...")
@@ -108,6 +141,7 @@ function U:Build()
     end
     self.stop = button(main, "Stop", 68, function() RG.Transport:Send("stop", "", "") end); self.stop:SetPoint("TOPRIGHT", -2, -57)
     self.contentPanel = panel(main); self.contentPanel:SetPoint("TOPLEFT", 0, -103); self.contentPanel:SetPoint("BOTTOMRIGHT", 0, 201)
+    RG.Theme.Page(self.contentPanel, false)
     self.contentStatus = label(main, 11, {0.65,0.7,0.72}, "Fonts\\ARIALN.TTF"); self.contentStatus:SetPoint("TOPLEFT", 5, -85); self.contentStatus:SetPoint("TOPRIGHT", -5, -85); self.contentStatus:SetHeight(14)
     self.scroll = CreateFrame("ScrollFrame", "RoamgateConversationScroll", self.contentPanel, "UIPanelScrollFrameTemplate")
     self.scroll:SetPoint("TOPLEFT", 13, -13); self.scroll:SetPoint("BOTTOMRIGHT", -30, 13)
@@ -117,8 +151,9 @@ function U:Build()
 
     self.controls = CreateFrame("Frame", nil, main); self.controls:SetPoint("BOTTOMLEFT", 0, 160); self.controls:SetPoint("BOTTOMRIGHT", 0, 160); self.controls:SetHeight(34)
     self.keyButtons = {}
-    for i, entry in ipairs({ {"Up", "up", 42}, {"Down", "down", 52}, {"Tab", "tab", 42}, {"Space", "space", 56}, {"1", "1", 28}, {"2", "2", 28}, {"3", "3", 28}, {"4", "4", 28}, {"Cancel", "esc", 60} }) do
-        local b = button(self.controls, entry[1], entry[3], function() RG.Transport:Send("key", entry[2]) end)
+    for i, entry in ipairs({ {"Up", "up", 42}, {"Down", "down", 52}, {"Tab", "tab", 42}, {"Space", "space", 56}, {"1", "1", 28}, {"2", "2", 28}, {"3", "3", 28}, {"4", "4", 28}, {"Cancel", "esc", 60}, {"Question", "shift+left", 86} }) do
+        local b = button(self.controls, entry[1], entry[3], function() if entry[2] == "shift+left" then self:Navigate("questions", "") else RG.Transport:Send("key", entry[2]) end end)
+        b.questionKey = entry[2]
         if i == 1 then b:SetPoint("LEFT", 0, 0) else b:SetPoint("LEFT", self.keyButtons[i - 1], "RIGHT", 4, 0) end
         self.keyButtons[i] = b
     end
@@ -144,7 +179,7 @@ function U:Build()
     composeScroll:SetScrollChild(self.composer)
     composeScroll:SetScript("OnSizeChanged", function(_, w) self.composer:SetWidth(w) end)
     self.composer:SetScript("OnTextChanged", function(e)
-        if RG.selected then RoamgateDB.drafts[RG.selected] = e:GetText() end
+        self:SaveDraft()
         if self.counter then self.counter:SetText(#e:GetText() .. " / 6000 bytes") end
     end)
     self.composer:SetScript("OnEnterPressed", function(e)
@@ -175,10 +210,10 @@ function U:Build()
     local grip = CreateFrame("Button", nil, f); grip:SetSize(18, 18); grip:SetPoint("BOTTOMRIGHT", -3, 3)
     local gt = grip:CreateTexture(nil, "ARTWORK"); gt:SetAllPoints(); gt:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end); grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
-    f:SetScript("OnHide", function() self:SaveScroll(); self.composer:ClearFocus(); self.search:ClearFocus() end)
+    f:SetScript("OnHide", function() self:SaveScroll(); self.composer:ClearFocus(); self.search:ClearFocus(); if RG.Guide and RG.Guide:IsShown() then RG:Activate("guide") end end)
     self:BuildMinimap()
     self:BuildHUD()
-    self.composer:SetText(RG.selected and RoamgateDB.drafts[RG.selected] or "")
+    self:SyncComposer()
     self:SetNotice("Alt+R minimizes / restores this workspace when the key is available. /rg also works.")
     self:Refresh(); f:Hide()
 end
@@ -195,6 +230,7 @@ function U:BuildMinimap()
     end); b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 function U:OpenPane(pane)
+    RG:Activate("work")
     if pane then RG:Select(pane) end
     self.frame:Show(); RG.Transport:RefreshSoon(); self:Refresh()
 end
@@ -258,18 +294,23 @@ function U:UpdateHUD()
     self.hud:SetShown(not RoamgateDB.hudHidden)
 end
 function U:SendMessage()
-    local text = self.composer:GetText()
-    if not text:match("%S") then self:SetNotice("Write a message first."); return end
     local s = RG.data and RG.data.selected
     if not s then return end
+    if not self.newMode and self.QuestionMode(s) ~= "none" and self.draftMode ~= "answer" then
+        self:SetNotice("Your task draft is saved. Review the question before sending more work."); self:Navigate("questions", ""); return
+    end
+    local text = self.composer:GetText()
+    if not text:match("%S") then self:SetNotice("Write a message first."); return end
     if self.newMode then RG.Transport:Send("new", text, self.newKind)
-    elseif s.status == "blocked" then RG.Transport:Send("answer", text)
+    elseif self.draftMode == "answer" then RG.Transport:Send("answer", text)
     else RG.Transport:Send("message", text) end
 end
 function U:Navigate(view, path)
+    RG:Activate("work")
     self:SaveScroll()
     self.view, RG.browsePath, self.lastContent = view, path or "", nil
-    RG.Transport:RefreshSoon(); self:RenderContent()
+    self.questionIntent = view == "questions" and {pane=RG.selected, untilTime=GetTime()+40} or nil
+    RG.Transport:RefreshSoon(); self:Refresh()
 end
 function U:WorkspaceMenu(parent)
     if self.workspaceMenu and self.workspaceMenu:IsShown() then self.workspaceMenu:Hide(); return end
@@ -295,8 +336,10 @@ end
 function U:ActionResult(sent, ack)
     self:SetNotice(ack.message or "Companion acknowledged the action.")
     if ack.state == "ok" and (sent.op == "message" or sent.op == "answer" or sent.op == "new") then
-        if RoamgateDB.drafts[sent.pane] == sent.text then RoamgateDB.drafts[sent.pane] = "" end
-        if RG.selected == sent.pane and self.composer:GetText() == sent.text then self.composer:SetText("") end
+        local mode = sent.op == "answer" and "answer" or "message"
+        local drafts = mode == "answer" and RoamgateDB.answerDrafts or RoamgateDB.drafts
+        if drafts and drafts[sent.pane] == sent.text then drafts[sent.pane] = "" end
+        if self.draftPane == sent.pane and self.draftMode == mode and self.composer:GetText() == sent.text then self.composer:SetText("") end
         if sent.op == "new" and ack.pane then self.newMode = false; RG:Select(ack.pane) end
     end
 end
@@ -378,10 +421,11 @@ function U:RenderContent()
             elseif #(browser.entries or {}) == 0 then table.insert(entries,{role="guide",text=self.view == "changes" and "No uncommitted changes." or "This folder is empty."}) end
         end
     elseif self.view == "terminal" or self.view == "questions" then
-        entries = {{role = s.status == "blocked" and "question" or "terminal", text = s.screen}}
+        entries = {{role = self.QuestionMode(s) == "visible" and "question" or "terminal", text = s.screen}}
     elseif #s.entries > 0 then entries = s.entries
     else entries = {{role="fallback", text=s.transcript or s.screen}} end
-    self.contentStatus:SetText(s and (self.view == "conversation" and safe(s.historyStatus) or (s.cached and "Saved view · refreshing..." or "")) or "")
+    local question = self.QuestionMode(s)
+    self.contentStatus:SetText(question == "queued" and "Question waiting in the agent's tray · click Questions to open it. Your task draft is saved." or (self.draftMode == "answer" and "Answer draft · paste, review, then Confirm / Enter. Your task draft is saved separately." or (s and (self.view == "conversation" and safe(s.historyStatus) or (s.cached and "Saved view · refreshing..." or "")) or "")))
     local location = self.view .. (RG.selected or "") .. (RG.browsePath or "")
     local key = location .. tostring(self.content:GetWidth())
     for _, e in ipairs(entries) do key = key .. e.role .. e.text end
@@ -389,7 +433,7 @@ function U:RenderContent()
     self.lastContent = key
     local saved = self.contentLocation ~= location and self.scrollPositions[location] or nil
     local nearBottom = saved and saved.bottom or (self.contentLocation == location and self.scroll:GetVerticalScrollRange() - self.scroll:GetVerticalScroll() < 45)
-    if self.contentLocation ~= location and not saved then nearBottom = self.view == "conversation" or self.view == "terminal" or self.view == "questions" end
+    if self.contentLocation ~= location and not saved then nearBottom = self.view == "conversation" or self.view == "terminal" end
     self.contentLocation = location
     for _, f in ipairs(self.messageFrames) do f:Hide() end
     local y, width = 0, math.max(280, self.content:GetWidth() - 14)
@@ -420,7 +464,7 @@ function U:RenderContent()
     elseif self.lastLocation ~= location then self.scroll:SetVerticalScroll(0) end
     self.lastLocation = location
     local activeTab = self.view == "file" and "files" or (self.view:match("^diff:") and "changes" or self.view)
-    for key2, b in pairs(self.tabs) do if key2 == activeTab then b:Disable() else b:Enable() end end
+    for key2, b in pairs(self.tabs) do if key2 == activeTab and not (key2 == "questions" and question == "queued") then b:Disable() else b:Enable() end end
 end
 function U:Refresh()
     if not self.frame then return end
@@ -428,14 +472,15 @@ function U:Refresh()
     if s and s.pane ~= RG.selected then s = nil end
     self.sessionTitle:SetText(s and safe(s.title) or (RG.selected and "Opening session..." or "Welcome to Roamgate"))
     self.breadcrumb:SetText(s and safe(s.workspace .. "  /  " .. s.kind .. "  /  " .. s.cwd) or "Connected to the work you already have in progress")
-    local blocked = s and s.status == "blocked"
+    local blocked = self.QuestionMode(s) ~= "none"
     self.controls:SetShown(blocked and not self.newMode)
     self.newButton:SetText(self.newMode and "Cancel new" or "New chat"); self.kindButton:SetShown(self.newMode or false)
     self.kindButton:SetText(self.newKind or "codex")
-    self.send:SetText(self.newMode and "Start chat" or (blocked and "Paste answer" or "Send message"))
     if blocked and self.view == "conversation" and self.lastBlockedPane ~= s.pane then self.view = "questions"; self.lastContent = nil end
     self.lastBlockedPane = blocked and s.pane or nil
-    self:RenderList(); self:RenderContent(); self:UpdateStatus()
+    self:SyncComposer()
+    self.send:SetText(self.newMode and "Start chat" or (self.draftMode == "answer" and "Paste answer" or (blocked and "Review question" or "Send message")))
+    self:RenderList(); self:RenderContent(); self:UpdateStatus(); self:TryOpenQuestion()
 end
 function U:UpdateStatus()
     if not self.connection then return end
@@ -448,8 +493,9 @@ function U:UpdateStatus()
     local ready = fresh and data.mode == "interactive" and s and s.pane == RG.selected and not s.cached and not RG.Transport.pending and not RG.Transport.exhausted
     self.send:SetEnabled(ready and (self.newMode or s.activeAgent ~= false) and true or false); self.newButton:SetEnabled(ready and true or false)
     self.stop:SetEnabled(ready and s.status == "working" or false)
-    for _, b in ipairs(self.keyButtons) do b:SetEnabled(ready and s.status == "blocked" or false) end
-    self.confirm:SetEnabled(ready and s.status == "blocked" or false)
+    local question = self.QuestionMode(s)
+    for _, b in ipairs(self.keyButtons) do b:SetEnabled(ready and (b.questionKey == "shift+left" and question == "queued" or b.questionKey ~= "shift+left" and question == "visible") or false) end
+    self.confirm:SetEnabled(ready and question == "visible" or false)
     self.reload:SetEnabled(not InCombatLockdown() and not RG.Transport.pending)
     if RG.Transport.pending and GetTime() - RG.Transport.pendingAt > 25 then self:SetNotice("No acknowledgement yet. Your action is retained; it will not be sent twice. Check the companion.") end
     self:UpdateHUD()

@@ -4,7 +4,9 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { serviceUnit } from './unit.mjs';
+import { bundleUI } from './bundle.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const {version} = JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
 const args = process.argv.slice(2), stage = args.includes('--stage');
 const arg = key => args.includes(key) ? args[args.indexOf(key) + 1] : undefined;
 const home = os.homedir();
@@ -33,7 +35,9 @@ if (existing && !stage) {
   await fs.mkdir(backup, { recursive: true }); await fs.cp(addon, path.join(backup, 'Roamgate'), { recursive: true });
 }
 await fs.cp(path.join(root, 'addon/Roamgate'), addon, { recursive: true });
-await fs.writeFile(path.join(addon, 'Config.lua'), `local _, RG = ...\nRG.SLOT_COUNT = ${slots}\nRG.VERSION = "0.1.0"\n`);
+// Keep the already-discovered UI.lua entry point: new modules need only /reload.
+await fs.writeFile(path.join(addon,'UI.lua'),await bundleUI(path.join(root,'addon/Roamgate')));
+await fs.writeFile(path.join(addon, 'Config.lua'), `local _, RG = ...\nRG.SLOT_COUNT = ${slots}\nRG.VERSION = "${version}"\n`);
 for (let i = 1; i <= slots; i++) {
   const name = `RoamgateData${String(i).padStart(4, '0')}`, dir = path.join(destination, name);
   await fs.mkdir(dir, { recursive: true });
@@ -42,7 +46,7 @@ for (let i = 1; i <= slots; i++) {
   try { await fs.writeFile(path.join(dir, 'Data.lua'), '-- Filled atomically by the local Roamgate companion.\n', { flag: 'wx' }); }
   catch (e) { if (e.code !== 'EEXIST') throw e; }
 }
-await fs.writeFile(ownerFile, JSON.stringify({ source: root, slots, version: '0.1.0' }, null, 2));
+await fs.writeFile(ownerFile, JSON.stringify({ source: root, slots, version }, null, 2));
 if (!stage) {
   const state = path.join(root, '.local-data'); await fs.mkdir(state, { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(state, 'config.json'), JSON.stringify({ addonDir: destination, slots, mode: args.includes('--read-only') ? 'read-only' : 'interactive' }, null, 2), { mode: 0o600 });
@@ -61,5 +65,5 @@ if (!stage) {
     if (existing) execFileSync('systemctl', ['--user', 'restart', 'roamgate-wow.service'], { stdio: 'inherit' });
   }
 }
-console.log(`${stage ? 'Staged' : 'Installed'} Roamgate 0.1.0 and ${slots} update slots in ${destination}`);
+console.log(`${stage ? 'Staged' : 'Installed'} Roamgate ${version} and ${slots} update slots in ${destination}`);
 if (!stage) console.log(existing && existing.slots === slots ? 'Update installed. Use /reload out of combat, then /rg.' : 'Restart WoW completely once to discover the new addons. Then type /rg.');

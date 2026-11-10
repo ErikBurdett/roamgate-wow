@@ -1,13 +1,15 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { atomicWrite } from './files.mjs';
+import { guidePrompt } from './guide.mjs';
+import { questionMode } from './questions.mjs';
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const identity = a => JSON.stringify([a.pane_id, a.terminal_id, a.agent, a.agent_session || null, a.cwd]);
 const visibleHash = text => hash(text.trimEnd());
-const KEYS = new Set(['up', 'down', 'left', 'right', 'tab', 'space', 'enter', 'esc', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+const KEYS = new Set(['up', 'down', 'left', 'right', 'shift+left', 'tab', 'space', 'enter', 'esc', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
 export class Controller {
-  constructor({ herdr, roamgate, journal, mode = 'interactive', slots = 2048, clock = Date.now }) {
-    Object.assign(this, { herdr, roamgate, journal, mode, slots, clock }); this.proofs = new Map(); this.record = null; this.historyCache = new Map(); this.historyPending = new Map(); this.browserCache = new Map(); this.browserPending = new Set(); this.transcripts = new Map(); this.screens = new Map();
+  constructor({ herdr, roamgate, guide, journal, mode = 'interactive', slots = 2048, clock = Date.now }) {
+    Object.assign(this, { herdr, roamgate, guide, journal, mode, slots, clock }); this.proofs = new Map(); this.record = null; this.historyCache = new Map(); this.historyPending = new Map(); this.browserCache = new Map(); this.browserPending = new Set(); this.transcripts = new Map(); this.screens = new Map();
   }
   async init() {
     try { this.record = JSON.parse(await fs.readFile(this.journal, 'utf8')); }
@@ -35,12 +37,29 @@ export class Controller {
   async act(req) {
     if (this.mode !== 'interactive') throw Error('The companion is in read-only mode');
     const proof = this.proofs.get(req.proof);
+    if (req.op === 'guide_new') {
+      if (req.scope !== 'guide' || !this.guide || !proof || proof.type !== 'guide_start' || proof.character !== req.character || proof.nonce !== req.nonce || this.clock()-proof.at>45000) throw Error('Refresh the Grimoire before opening a new guide chat.');
+      this.proofs.delete(req.proof); return this.guide.create(req.character,req.text,req.extra);
+    }
+    if (req.op === 'guide_message' && req.scope !== 'guide') throw Error('Game questions belong in the Adventurer’s Grimoire.');
+    if (req.scope === 'guide') {
+      const bound=this.guide?.binding(req.character);
+      if (!bound || bound.pane!==req.pane || bound.terminal!==req.terminal) throw Error('This is not the linked character guide. Refresh the Grimoire.');
+      if (!['guide_message','key','answer','stop'].includes(req.op)) throw Error('Unsupported guide action');
+    }
     if (!proof || proof.pane !== req.pane || this.clock() - proof.at > 45000) throw Error('This view is stale. Wait for an update, review it, and send again.');
     const agent = req.op === 'new' && this.herdr.pane ? await this.herdr.pane(req.pane) : await this.herdr.get(req.pane);
     if (identity(agent) !== proof.identity || agent.terminal_id !== req.terminal) throw Error('The agent session changed. Review the new session before sending.');
+    if (req.op==='key' && req.text==='shift+left') {
+      const screen=await this.herdr.read(req.pane);
+      if (questionMode(agent,screen)!=='queued') throw Error('There is no queued question to open. Refresh the current view.');
+      this.proofs.delete(req.proof);await this.herdr.key(req.pane,'shift+left');
+      return {message:'Opened the queued question. Review its text and choices before answering.'};
+    }
     if (['key', 'answer'].includes(req.op)) {
       if (agent.agent_status !== 'blocked') throw Error('The agent is no longer waiting for an answer');
       const screen = await this.herdr.read(req.pane);
+      if (questionMode(agent,screen)==='queued') throw Error('Open Questions first. The queued request is not an answer field; your draft is saved.');
       if (visibleHash(screen) !== proof.screen || agent.state_change_seq !== proof.seq) throw Error('The question changed. Review the current question before answering.');
       // Consume even when the downstream write is uncertain.
       this.proofs.delete(req.proof);
@@ -59,10 +78,10 @@ export class Controller {
       return { message: 'Stop requested. Check the agent status.' };
     }
     this.validateText(req.text);
-    if (req.op === 'message') {
+    if (req.op === 'message' || req.op === 'guide_message') {
       if (agent.agent_status === 'blocked') throw Error('Answer the current question before sending a new task');
       if (!['working', 'idle', 'done'].includes(agent.agent_status)) throw Error('Agent state is unknown; inspect it in Roamgate');
-      this.proofs.delete(req.proof); await this.herdr.prompt(req.pane, req.text);
+      this.proofs.delete(req.proof); await this.herdr.prompt(req.pane, req.op==='guide_message' ? guidePrompt(req.text,req.extra) : req.text);
       return { message: 'Message submitted to the agent.' };
     }
     if (req.op === 'new') {
@@ -79,18 +98,25 @@ export class Controller {
     if (!text.trim() || Buffer.byteLength(text) > 6000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text)) throw Error('Use 1–6000 UTF-8 bytes of plain text');
   }
   async snapshot(req) {
+    const guideBinding=req.scope==='guide' ? this.guide?.binding(req.character) : null;
+    if (req.scope==='guide') req={...req,pane:guideBinding?.pane || ''};
     const [activeAgents, workspaces, panes, tabs] = await Promise.all([this.herdr.agents(), this.herdr.workspaces(), this.herdr.panes ? this.herdr.panes() : [], this.herdr.tabs ? this.herdr.tabs() : []]);
     const activeMap = new Map(activeAgents.map(a => [a.pane_id, a]));
     const agents = panes.length ? panes.map(p => ({ ...p, ...activeMap.get(p.pane_id) })) : activeAgents;
     const tabNames = new Map(tabs.map(t => [t.tab_id, t.label]));
     const names = new Map(workspaces.map(w => [w.workspace_id, w.label]));
     const list = agents.map(a => ({ pane: a.pane_id, terminal: a.terminal_id, kind: a.agent || 'terminal', activeAgent: !!a.agent, status: a.agent_status, workspaceId: a.workspace_id, workspace: names.get(a.workspace_id) || a.workspace_id, tab: tabNames.get(a.tab_id) || '', title: (a.agent ? (a.terminal_title_stripped || a.terminal_title || a.pane_id) : (tabNames.get(a.tab_id) || a.terminal_title || a.pane_id)).replace(/^[⠁-⣿]\s*/, ''), cwd: a.foreground_cwd || a.cwd }));
-    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), ack: this.record, slots: this.slots };
-    const selected = agents.find(a => a.pane_id === req.pane);
+    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, scope:req.scope || 'work', character:req.character || '', agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), ack: this.record, slots: this.slots };
+    if (req.scope==='guide' && this.guide) {
+      data.guideStartProof=hash(req.nonce+':guide:'+req.character);
+      this.proofs.set(data.guideStartProof,{type:'guide_start',nonce:req.nonce,character:req.character,at:this.clock()});
+    }
+    const selected = agents.find(a => a.pane_id === req.pane && (!guideBinding || a.terminal_id === guideBinding.terminal));
+    if (req.scope==='guide') data.guidePane=selected?.pane_id || '';
     if (!selected || !req.visible) return data;
     const selectedIdentity = identity(selected);
     let captured = this.screens.get(req.pane);
-    const screenTTL = selected.agent_status === 'working' ? 5000 : 12000;
+    const screenTTL = selected.agent_status === 'blocked' || (captured && questionMode(selected,captured.text)==='queued') ? 2000 : selected.agent_status === 'working' ? 5000 : 12000;
     if (!captured || captured.identity !== selectedIdentity || captured.seq !== selected.state_change_seq || this.clock() - captured.at >= screenTTL) {
       const text = selected.agent ? await this.herdr.read(req.pane) : await this.herdr.readPane(req.pane);
       captured = {identity:selectedIdentity,seq:selected.state_change_seq,at:this.clock(),text};this.screens.set(req.pane,captured);
@@ -124,7 +150,7 @@ export class Controller {
     const proof = { pane: req.pane, identity: identity(selected), screen: visibleHash(screen), seq: selected.state_change_seq, at: captured.at };
     this.proofs.set(proofKey, proof);
     for (const [key, value] of this.proofs) if (this.clock() - value.at > 45000) this.proofs.delete(key);
-    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
+    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, questionMode:questionMode(selected,screen), transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
     if (req.op === 'view' && (['files', 'file', 'changes'].includes(req.text) || req.text?.startsWith('diff:'))) {
       const key = JSON.stringify([selected.workspace_id, req.text, req.extra]);
       const cached = this.browserCache.get(key);

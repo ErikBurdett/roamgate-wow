@@ -49,6 +49,20 @@ SOUNDKIT={IG_MAINMENU_OPTION_CHECKBOX_ON=1}
 function GetTime() return now end
 function GetServerTime() return 10000 end
 function GetPhysicalScreenSize() return 2560,1440 end
+function UnitGUID() return "Player-1-abc123" end
+function UnitName() return "Adventurer" end
+function GetRealmName() return "Realm" end
+function UnitLevel() return 27 end
+function UnitClass() return "Warrior" end
+function UnitRace() return "Human" end
+function UnitFactionGroup() return "Alliance" end
+function GetZoneText() return "Duskwood" end
+function GetSubZoneText() return "Raven Hill" end
+function GetBuildInfo() return "1.60.1","70862" end
+function GetNumQuestLogEntries() return 2 end
+function GetQuestLogTitle(i) if i==1 then return "Duskwood",0,0,true else return "A test quest",28,0,false,false,0,false,123 end end
+function GetNumQuestLeaderBoards() return 1 end
+function GetQuestLogLeaderBoard() return "Wolves: 2/8","monster",false end
 function InCombatLockdown() return false end
 function IsShiftKeyDown() return false end
 function PlaySound() end
@@ -62,7 +76,7 @@ function SaveBindings() end
 function GetCurrentBindingSet() return 1 end
 RoamgateDB={drafts={}}
 C_AddOns={LoadAddOn=function() return true end}
-for _, name in ipairs({"Config","Transport","UI","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
+for _, name in ipairs({"Config","Transport","Theme","Character","UI","Guide","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
 local login=all[#all];login.scripts.OnEvent(login,"PLAYER_LOGIN")
 check(not RG.UI:IsShown(),"starts closed")
 check(RG.UI.view=="terminal","Live terminal is the default view")
@@ -87,6 +101,7 @@ RG.UI:ActionResult(pending,{state="ok",message="Sent"});check(RG.UI.composer:Get
 RG.Transport.pending=nil
 RG.UI:Navigate("conversation","");s.status="blocked";s.screen="> 1. Allow\n  2. Decline";RG:Receive(data)
 check(RG.UI.view=="questions","blocked sessions open exact question")
+check(RG.UI.composer:GetText()=="" and RoamgateDB.drafts[s.pane]=="New draft while sending","answer editor never inherits the task draft")
 check(RG.UI.confirm.enabled,"fresh question confirm enabled")
 RG.UI.confirm.scripts.OnClick();check(popup=="ROAMGATE_CONFIRM","Enter has explicit confirmation")
 s.proof="changed";StaticPopupDialogs.ROAMGATE_CONFIRM.OnAccept();check(not RG.Transport.pending,"changed question rejected before confirmation")
@@ -98,7 +113,7 @@ data.mode="interactive";RG:Receive(data)
 local received=RG.Transport.receivedAt
 C_AddOns={LoadAddOn=function() RoamgateInbox={nonce="wrong",timestamp=10000};return true end}
 RG.Transport:Load();check(RG.Transport.receivedAt==received,"wrong nonce ignored")
-RG.UI.composer:SetText("Keep this");RG:Select("w2:p1");check(RoamgateDB.drafts["w1:p1"]=="Keep this","switch preserves per-session draft")
+RG.UI.composer:SetText("Keep this");RG:Select("w2:p1");check(RoamgateDB.answerDrafts["w1:p1"]=="Keep this","switch preserves the separate answer draft")
 check(not RG.UI.send.enabled,"old selected payload cannot send to new selection")
 RG:Select(s.pane)
 RG.UI:Navigate("files","")
@@ -121,10 +136,71 @@ RoamgateToggle()
 check(RG.UI.messageFrames[1].text:GetText()==previousText,"minimize restores cached conversation immediately")
 check(not RG.UI.send.enabled and not RG.Transport:Send("message","unsafe"),"cached display cannot authorize an action")
 RG:Receive(data);check(RG.UI.send.enabled,"fresh selection restores action controls")
+RG.UI:Navigate("terminal","");RG.UI.composer:SetText("My next work task")
+s.status="blocked";s.questionMode="queued";s.screen="Queued follow-up inputs\n ? 1 question\n shift+← to answer";RG:Receive(data)
+check(RG.UI.composer:GetText()=="My next work task" and RG.UI.send:GetText()=="Review question","queued request preserves ordinary work draft")
+check(not RG.UI.confirm.enabled,"queued request cannot receive Enter")
+s.cached=true;RG.UI:Navigate("questions","")
+check(not RG.Transport.pending and RG.UI.questionIntent,"question navigation waits for a fresh selected view")
+s.cached=nil;RG:Receive(data)
+check(RG.Transport.pending.op=="key" and RG.Transport.pending.text=="shift+left","Questions opens the queued tray without Enter")
+RG.Transport.pending=nil;s.questionMode="visible";s.screen="Which approach?\n>1. First\n2. Second";RG:Receive(data)
+check(RG.UI.draftMode=="answer" and RG.UI.composer:GetText()=="Keep this","opening the actual question restores its separate answer draft")
+RG.UI.composer:SetText("My answer");RG.UI:SendMessage()
+check(RG.Transport.pending.op=="answer","visible question text is pasted separately")
+RG.UI:ActionResult(RG.Transport.pending,{state="ok",message="Pasted"});RG.Transport.pending=nil
+check(RoamgateDB.drafts[s.pane]=="My next work task","answer acknowledgement leaves the work draft intact")
+s.questionMode="none";s.status="working";RG:Receive(data)
+check(RG.UI.composer:GetText()=="My next work task" and not RG.Transport.pending,"resolved question restores work draft without auto-sending")
 local unicode=string.rep("A雪🌍\n",600);local parts=RG.UI.TextBlocks({{role="assistant",text=unicode}});local joined={}
 for _, part in ipairs(parts) do check(#part.text<=1800,"native text block is bounded");table.insert(joined,part.text) end
 check(table.concat(joined)==unicode,"long chat blocks preserve full Unicode text")
 RG.UI.composer:SetText(string.rep("long message ",400));RG.UI:SendMessage();RG.Transport:Tick(0.25)
 local part=RG.Transport.part;RG.Transport:Load()
 check(RG.Transport.part==part,"fast polling cannot interrupt a multi-frame outbound message")
+RG.Transport.pending=nil
+local character=RG.Character:Collect()
+check(character.level==27 and #character.quests==1,"character and legacy quest API snapshot")
+check(RG.Character:Text(character,123):find("Wolves: 2/8",1,true),"selected quest objectives included")
+local originalQuestLog=C_QuestLog
+C_QuestLog={GetNumQuestLogEntries=function()return 1 end,GetInfo=function()return {title="Modern quest",questID=456,level=27}end,GetQuestObjectives=function()return {{text="Visit the inn",finished=false}}end}
+check(RG.Character:Collect().quests[1].title=="Modern quest","modern quest API supported")
+C_QuestLog=originalQuestLog
+RG.UI.composer:SetText("Work draft to preserve")
+local workPane=RG.selected
+RoamgateGuideToggle();check(RG.Guide:IsShown() and RG.activeSurface=="guide","guide opens a separate window")
+check(RG.selected==workPane and RG.UI.composer:GetText()=="Work draft to preserve","opening guide preserves work target and draft")
+RG.Guide:Receive({timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=""})
+RG.Guide.composer:SetText("What should I do next?");RG.Guide:Send()
+check(RG.Transport.pending.op=="guide_new" and RG.Transport.pending.scope=="guide","guide starts through its own scoped command")
+check(RG.Transport.pending.pane=="" and RG.Transport.pending.extra:find("Duskwood",1,true),"guide bootstrap carries character context, never a work pane")
+local sent=RG.Transport.pending
+RG.Guide:ActionResult(sent,{state="error",message="Try later"});check(RG.Guide.composer:GetText()==sent.text,"guide delivery failure preserves draft")
+RG.Transport.pending=nil
+local gs={pane="wG:p1",terminal="tg",kind="codex",workspace="WoW Adventures",title="My guide",status="idle",proof="guide-proof",screen="Hello adventurer",entries={},activeAgent=true}
+RG:Receive({timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=gs.pane,selected=gs,agents={s,gs}})
+check(RG.Guide.selected==gs.pane and RG.selected==workPane,"guide response cannot change the work selection")
+RG.Guide.composer:SetText("A follow-up");RG.Guide:Send()
+check(RG.Transport.pending.op=="guide_message" and RG.Transport.pending.pane==gs.pane,"follow-up targets the linked guide")
+RG.Transport.pending=nil
+RG.Guide:Receive({timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=gs.pane})
+check(RG.Guide.selected==gs.pane and RG.Guide.data.selected.cached,"hidden guide retains its selected chat")
+check(not RG.Guide.send.enabled,"cached guide view cannot authorize input")
+RG.Guide.includeContext=false;RG.Guide:Receive({timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=gs.pane,selected=gs})
+RG.Guide:Send();check(RG.Transport.pending.extra=="","character context can be withheld")
+RG.Transport.pending=nil
+RG.Guide.composer:SetText("My next game question");gs.status="blocked";gs.questionMode="queued"
+local guideData={timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=gs.pane,selected=gs}
+RG.Guide:Receive(guideData)
+check(RG.Guide.composer:GetText()=="My next game question" and not RG.Guide.confirm.enabled,"guide queued question preserves draft and disables Enter")
+RG.Guide:Navigate("questions")
+check(RG.Transport.pending.scope=="guide" and RG.Transport.pending.text=="shift+left","guide Questions opens only its own tray")
+RG.Transport.pending=nil;gs.questionMode="visible";RG.Guide:Receive(guideData)
+check(RG.Guide.composer:GetText()=="" and RG.Guide.saved.draft=="My next game question","guide answer composer is separate from game question")
+RG.Guide.composer:SetText("My guide answer");RG.Guide:Send()
+check(RG.Transport.pending.op=="answer","guide pastes the explicit answer")
+RG.Guide:ActionResult(RG.Transport.pending,{state="ok",message="Pasted"});RG.Transport.pending=nil
+gs.status="idle";gs.questionMode="none";RG.Guide:Receive(guideData)
+check(RG.Guide.composer:GetText()=="My next game question","guide restores its question after answering")
+check(bindings["ALT-G"]=="ROAMGATE_GUIDE","Alt+G opens the guide without changing Alt+R")
 print("Lua addon contract: "..checks.." checks passed")

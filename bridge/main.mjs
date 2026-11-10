@@ -7,6 +7,7 @@ import { Roamgate } from './roamgate.mjs';
 import { Controller } from './controller.mjs';
 import { Desktop } from './desktop.mjs';
 import { Assembler } from './protocol.mjs';
+import { GuideSessions } from './guide.mjs';
 import { atomicWrite, publish } from './files.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const home = os.homedir();
@@ -45,7 +46,8 @@ async function run() {
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const lock = await fs.open(lockPath, 'wx', 0o600); await lock.writeFile(String(process.pid)); await lock.close();
   const herdr = new Herdr(), roamgate = new Roamgate(), desktop = new Desktop(), assembler = new Assembler();
-  const controller = new Controller({ herdr, roamgate, journal: path.join(stateDir, 'actions.json'), mode: c.mode, slots: c.slots });
+  const guide = new GuideSessions({herdr,directory:path.join(stateDir,'adventurer')}); await guide.init();
+  const controller = new Controller({ herdr, roamgate, guide, journal: path.join(stateDir, 'actions.json'), mode: c.mode, slots: c.slots });
   let stopped = false, request = null, lastPublish = 0, lastId = '', errorAt = 0;
   const stop = () => { stopped = true; }; process.on('SIGINT', stop); process.on('SIGTERM', stop); process.on('SIGHUP', stop);
   try {
@@ -60,7 +62,7 @@ async function run() {
           if (received) request = received;
         } else request = null;
         if (request && request.slot <= c.slots) {
-          const id = `${request.nonce}:${request.id}:${request.slot}:${request.pane}:${request.visible}:${request.op === 'view' ? request.text + ':' + request.extra : ''}`;
+          const id = `${request.nonce}:${request.id}:${request.slot}:${request.scope}:${request.character}:${request.pane}:${request.visible}:${request.op === 'view' ? request.text + ':' + request.extra : ''}`;
           if (id !== lastId || start - lastPublish > 1500) {
             const snapshot = await controller.handle(request);
             await publish(c.addonDir, request, snapshot, c.slots);

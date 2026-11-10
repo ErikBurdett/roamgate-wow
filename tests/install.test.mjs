@@ -17,6 +17,8 @@ test('staging creates valid load-on-demand addons and preserves a published snap
   execFileSync(process.execPath,['scripts/install.mjs','--stage',dir,'--slots','16']);
   assert.match(await fs.readFile(file,'utf8'),/example/);
   assert.match(await fs.readFile(path.join(dir,'RoamgateData0016/RoamgateData0016.toc'),'utf8'),/## LoadOnDemand: 1/);
+  const ui=path.join(dir,'Roamgate/UI.lua');assert.match(await fs.readFile(ui,'utf8'),/function RoamgateGuideToggle/);
+  execFileSync('lua5.1',['-e',`assert(loadfile(${JSON.stringify(ui)}))`]);
   execFileSync('lua5.1',['-e',`assert(loadfile(${JSON.stringify(file)}))()`]);
 });
 test('staging refuses to overwrite an unowned addon',async t=>{

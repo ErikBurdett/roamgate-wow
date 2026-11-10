@@ -1,8 +1,9 @@
 # Roamgate for WoW Forever
 
-A native, movable WoW panel for the Roamgate / Herdr agents on this Linux machine.
-It uses WoW's own frames, gold headings, dark panels, blue workspace labels and a
-minimap portal. It does not embed a browser or run a second set of agents.
+Native, movable WoW spellbook windows for the Roamgate / Herdr agents on this
+Linux machine. The work grimoire and Adventurer's Grimoire have carved borders,
+gold trim, book emblems, parchment and WoW's gryphon action-bar end caps. Both use
+the same local Roamgate system, with separate conversations and drafts.
 
 ## Open it
 
@@ -17,7 +18,7 @@ the transport strip only while World of Warcraft is the focused window.
 
 ## Working from Azeroth
 
-- **All workspaces** selects any Roamgate workspace. All 48 existing panes are
+- **All workspaces** selects any Roamgate workspace. Every existing pane is
   included, including inactive terminals. Search by title, workspace, tab or agent;
   **Needs you** filters waiting agents. Terminals without a detected agent are
   readable and can be the project context for a new chat; prompts are not sent to
@@ -36,11 +37,18 @@ the transport strip only while World of Warcraft is the focused window.
   terminal fallback; it is never matched to a different session by folder or title.
 - Write a task and press **Enter** or **Send message**. **Shift+Enter** inserts a newline;
   **Escape** releases the keyboard. Drafts are kept separately for each session.
-- A blocked agent opens **Questions** with its exact terminal screen. Use the
+- Click **Questions** or the HUD's question badge to review a waiting request.
+  Codex's queued follow-up tray opens with its own navigation shortcut; it never
+  receives an automatic Enter. Changing work output does not invalidate this
+  navigation. The displayed question still requires an exact fresh view to answer.
+  Use the
   navigation/number buttons to select an option. **Confirm / Enter** asks you to
   review that selection before delivering Enter. **Cancel** sends Escape.
 - For a text field in a question, **Paste answer** inserts your words. Review the
-  result, then use **Confirm / Enter**. Pasting does not submit the answer.
+  result, then use **Confirm / Enter**. Pasting does not submit the answer. Answer
+  drafts and ordinary message drafts are separate. A waiting question changes the
+  ordinary Send action to **Review question**, preserving your task until you
+  finish answering; it never silently pastes a work task into an answer field.
 - **New chat** starts a chosen Codex, Claude, Hermes or OpenCode agent in the selected
   session's project and workspace. Write the first task, choose the agent, and
   press **Start chat**. The existing desktop tab retains focus. Agent defaults come
@@ -59,6 +67,46 @@ When history is not linked, Conversation shows recent unwrapped terminal text an
 labels the fallback above the content. Live terminal and Questions retain the
 exact current screen.
 
+## Adventurer's Grimoire
+
+Open **`/rgg`**, **`/rg guide`**, **Alt+G** (assigned only if free), or the
+**Adventurer's Grimoire** button in the work window. This is a separate movable
+window; opening it preserves your work chat and draft. Both windows may remain
+open. The window you last interact with receives the detailed refreshes; the
+other keeps its cached view. They share one outbound action at a time.
+
+The left page shows your character, level, class, race, location, and current
+quest log. Choose a quest to prepare a question, or use **About my character**,
+**Equipment & abilities**, or **What should I do next?**. These fill the draft;
+they do not send it automatically. The right page has **Live reply**,
+**Conversation**, **Questions**, and a **Context** preview.
+
+**Open guide & ask** starts a Codex chat in a dedicated **WoW Adventures**
+workspace through Herdr. It uses the installed agent defaults and preserves the
+desktop's focus. Follow-ups use that same guide. **New conversation** starts a
+fresh guide when you send the next question. A durable character-to-pane binding
+and separate drafts keep different characters and work chats apart.
+
+Each submitted game question can include a fresh snapshot: character identity,
+level/class/race/faction, zone and available map position, health and attributes,
+equipped item names/IDs, and quest titles, IDs and objectives. The selected quest
+comes first. Snapshot text is capped at 4,900 bytes and questions at 2,000 bytes.
+Use **Character & quests: off** to withhold the snapshot. It is not continuously
+transmitted; ordinary guide polling carries only the character routing ID.
+Game chat, guild/party messages and bag contents are not collected. Unsupported
+client APIs are handled with explicit omissions, using modern and legacy quest
+API fallbacks.
+
+The guide mixes light in-world personality with practical advice, distinguishes
+Forever from Classic/retail, and is instructed to verify version-specific facts
+and acknowledge uncertainty. It advises rather than controlling the character.
+New-agent startup may take several seconds; any startup question is shown for
+your review with the same explicit confirmation controls. A failed startup keeps
+the created pane available for inspection and preserves the draft.
+
+The installer bundles the new Lua modules into the existing `UI.lua` entry point,
+so this upgrade needs **`/reload`**, without new addon discovery or a full relaunch.
+
 ## Update limits
 
 WoW addons cannot open HTTP/WebSocket connections. The Lua addon draws a compact
@@ -69,13 +117,15 @@ can load once per UI session.
 
 This installation has **2,048 update slots**. It loads one every second while
 awaiting an acknowledgement or briefly after opening, selecting or navigating.
-Otherwise the open panel polls every five seconds for a working agent and 12
+An open waiting question polls every three seconds. Otherwise the open panel
+polls every five seconds for a working agent and 12
 seconds for an idle one; the expanded HUD alone polls every 12 seconds, and both
 hidden/collapsed every 30 seconds. That is about 2.8 hours of continuously watching
 work, 6.8 hours idle or of expanded HUD use, or 17 hours collapsed, before
 accounting for interaction bursts. Background notifications may take up to 12 or
 30 seconds. Slow history/file requests do not block command acknowledgements.
-The companion reuses terminal captures for five seconds while working and 12
+The companion reuses terminal captures for two seconds during questions, five
+seconds while working and 12
 seconds while idle, invalidating them when agent state changes or an action is
 handled. Question input always checks the current terminal again before sending.
 The counter shows the
@@ -107,7 +157,7 @@ them with private permissions. Roamgate credentials stay in the existing private
 Roamgate configuration and are never copied to the addon or journal.
 
 File/diff editing, image attachments, voice, remote machines, worktree management,
-and provider-specific model pickers are not implemented in version 0.1.0. Use the
+and provider-specific model pickers are not implemented in version 0.2.0. Use the
 existing Roamgate client for those operations. This release targets Forever
 **1.60.1 / interface 16001** on this machine's **Hyprland / Wine** setup.
 

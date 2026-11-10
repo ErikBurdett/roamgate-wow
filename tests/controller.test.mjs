@@ -42,6 +42,31 @@ test('a resolved question cannot receive Enter',async t=>{
 test('user-selected question controls and paste are separate operations',async t=>{
   const f=await fixture(t,'blocked');await f.controller.handle({...f.command,op:'answer',text:'My answer'});assert.deepEqual(f.calls,[['answer','w1:p1','My answer']]);
 });
+const queuedScreen='Working on your task\nQueued follow-up inputs\n ? 1 question\n shift+← to answer';
+test('the question shortcut opens queued prompts despite changing work output without submitting Enter',async t=>{
+  const f=await fixture(t,'blocked');f.screen(queuedScreen);f.controller.screens.clear();
+  const before=await f.controller.handle(f.view);assert.equal(before.selected.questionMode,'queued');
+  f.screen('More work output\n'+queuedScreen);f.agent.state_change_seq++;
+  await f.controller.handle({...f.command,proof:before.selected.proof,op:'key',text:'shift+left'});
+  assert.deepEqual(f.calls,[['key','w1:p1','shift+left']]);
+});
+test('opening the question tray requires a currently queued question',async t=>{
+  const f=await fixture(t,'blocked');const s=await f.controller.handle({...f.command,op:'key',text:'shift+left'});
+  assert.match(s.ack.message,/no queued question/);assert.equal(f.calls.length,0);
+});
+test('queued questions cannot receive paste or Enter even with an exact view proof',async t=>{
+  for (const action of [{op:'answer',text:'A work task'},{op:'key',text:'enter'}]) {
+    const f=await fixture(t,'blocked');f.screen(queuedScreen);f.controller.screens.clear();
+    const before=await f.controller.handle(f.view);
+    const s=await f.controller.handle({...f.command,proof:before.selected.proof,...action});
+    assert.match(s.ack.message,/Open Questions first/);assert.equal(f.calls.length,0);
+  }
+});
+test('queued questions can be opened while the agent is still marked working',async t=>{
+  const f=await fixture(t,'working');f.screen(queuedScreen);
+  await f.controller.handle({...f.command,op:'key',text:'shift+left'});
+  assert.deepEqual(f.calls,[['key','w1:p1','shift+left']]);
+});
 test('normal prompts never answer a blocked question',async t=>{
   const f=await fixture(t,'blocked');const s=await f.controller.handle(f.command);assert.match(s.ack.message,/current question/);assert.equal(f.calls.length,0);
 });

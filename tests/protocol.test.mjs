@@ -5,6 +5,12 @@ import { fields, parseFields, encodeFrame, Assembler, WIDTH, HEIGHT, CELL, COLS,
 import { lua } from '../bridge/files.mjs';
 const packet = (text = 'Hello\n你好 | Héllo : "\\') => fields(['0123456789abcdef', 1, 1, 'message', 'w1:p1', 'term', 'proof', text, '', 1]);
 test('UTF-8 length-prefixed message preserves arbitrary plain text', () => { assert.equal(parseFields(packet()).text, 'Hello\n你好 | Héllo : "\\'); });
+test('work and game-guide packets preserve independent scope and character routing',()=>{
+  assert.equal(parseFields(packet()).scope,'work');
+  const req=parseFields(fields(['0123456789abcdef',1,2,'guide_message','wG:p1','term','proof','Which quest next?','Character and quests',1,'guide','Player-1-abc']));
+  assert.equal(req.scope,'guide');assert.equal(req.character,'Player-1-abc');assert.equal(req.extra,'Character and quests');
+  assert.throws(()=>parseFields(fields(['0123456789abcdef',1,2,'guide_new','','','proof','Hi','',1,'guide','__proto__'])));
+});
 test('Lua and JS generate byte-identical optical frames', () => {
   const actual = execFileSync('lua5.1', ['tests/wire.lua']);
   assert.deepEqual(actual, encodeFrame(packet(), 0, 1));

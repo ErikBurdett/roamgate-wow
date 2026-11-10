@@ -22,8 +22,11 @@ T.Checksum, T.Fields = checksum, fields
 
 function T:Packet()
     local p = self.pending or {}
-    return fields({ self.nonce, self.slot, p.id or 0, p.op or "view", p.pane or RG.selected or "",
-        p.terminal or "", p.proof or "", p.text or RG.UI.view or "", p.extra or RG.browsePath or "", RG.UI:IsShown() and "1" or "0" })
+    local owner = (p.scope == "guide" or (not self.pending and RG.activeSurface == "guide")) and RG.Guide or RG
+    local ui = owner.UI
+    return fields({ self.nonce, self.slot, p.id or 0, p.op or "view", p.pane or owner.selected or "",
+        p.terminal or "", p.proof or "", p.text or ui.view or "terminal", p.extra or owner.browsePath or "", ui:IsShown() and "1" or "0",
+        owner == RG and "work" or "guide", owner == RG and "" or owner:CharacterKey() })
 end
 function T:Frame(body, part, serial)
     local count = math.ceil(#body / CHUNK)
@@ -32,8 +35,9 @@ function T:Frame(body, part, serial)
     local frame = header .. chunk
     return frame .. string.rep(char(0), COLS * ROWS - #frame)
 end
-function T:IsFresh()
-    return self.receivedAt > 0 and GetTime() - self.receivedAt < 40 and RG.data and math.abs(GetServerTime() - (RG.data.timestamp or 0)) < 45
+function T:IsFresh(data)
+    data = data or RG.latest or RG.data
+    return self.receivedAt > 0 and GetTime() - self.receivedAt < 40 and data and math.abs(GetServerTime() - (data.timestamp or 0)) < 45
 end
 function T:RefreshSoon()
     if not self.pending then self.body, self.part = nil, 0 end
@@ -41,18 +45,21 @@ function T:RefreshSoon()
     self.urgentUntil = GetTime() + 2
     self.loadElapsed = 0
 end
-function T:Send(op, text, extra)
-    if self.pending then RG.UI:SetNotice("Waiting for the companion to acknowledge the last action."); return false end
-    local s = RG.data and RG.data.selected
-    if not self:IsFresh() or not s or s.pane ~= RG.selected or not s.proof or s.cached then RG.UI:SetNotice("Wait for a fresh view of this session before sending."); self:RefreshSoon(); return false end
-    if RG.data.mode ~= "interactive" then RG.UI:SetNotice("The companion is in read-only mode."); return false end
-    if #text > 6000 then RG.UI:SetNotice("The message limit is 6000 UTF-8 bytes."); return false end
+function T:Send(op, text, extra, owner)
+    owner = owner or RG
+    local ui, data = owner.UI, owner.data
+    if self.pending then ui:SetNotice("Waiting for the companion to acknowledge the last action."); return false end
+    local s = data and data.selected
+    local starting = owner == RG.Guide and op == "guide_new" and data and data.guideStartProof
+    if not self:IsFresh(data) or (not starting and (not s or s.pane ~= owner.selected or not s.proof or s.cached)) then ui:SetNotice("Wait for a fresh view of this session before sending."); self:RefreshSoon(); return false end
+    if data.mode ~= "interactive" then ui:SetNotice("The companion is in read-only mode."); return false end
+    if #text > 6000 or #(extra or "") > 5000 then ui:SetNotice("Message or context is too long."); return false end
     self.sequence = self.sequence + 1
-    self.pending = { id = self.sequence, op = op, text = text, extra = extra or "", pane = s.pane, terminal = s.terminal, proof = s.proof }
+    self.pending = { id = self.sequence, op = op, text = text, extra = extra or "", pane = starting and "" or s.pane, terminal = starting and "" or s.terminal, proof = starting or s.proof, scope = owner == RG and "work" or "guide" }
     self.part, self.body, self.pendingAt = 0, nil, GetTime()
     self:RefreshSoon()
-    RG.UI:SetNotice("Sending to " .. s.workspace .. " / " .. s.kind .. "...")
-    RG.UI:UpdateStatus()
+    ui:SetNotice(starting and "Opening your guide chat..." or ("Sending to " .. s.workspace .. " / " .. s.kind .. "..."))
+    ui:UpdateStatus()
     return true
 end
 function T:Load()
@@ -71,7 +78,7 @@ function T:Load()
         if self.pending and ack and ack.id == self.pending.id and ack.nonce == self.nonce then
             local sent = self.pending
             self.pending = nil
-            RG.UI:ActionResult(sent, ack)
+            if sent.scope == "guide" and RG.Guide then RG.Guide:ActionResult(sent, ack) else RG.UI:ActionResult(sent, ack) end
         end
         RG:Receive(data)
     elseif not ok then
@@ -122,12 +129,14 @@ function T:Tick(elapsed)
         end
         self.part = self.part + 1
     end
-    local selected = RG.data and RG.data.selected
-    local interval = (self.pending or GetTime() < (self.urgentUntil or 0)) and 1 or (RG.UI:IsShown() and (selected and selected.status == "working" and 5 or 12) or ((RG.UI.hud and RG.UI.hud:IsShown() and not RoamgateDB.hudCollapsed) and 12 or 30))
+    local owner = RG.activeSurface == "guide" and RG.Guide or RG
+    local selected = owner.data and owner.data.selected
+    local interval = (self.pending or GetTime() < (self.urgentUntil or 0)) and 1 or (owner.UI:IsShown() and (RG.UI.QuestionMode(selected) ~= "none" and 3 or (selected and selected.status == "working" and 5 or 12)) or ((RG.UI.hud and RG.UI.hud:IsShown() and not RoamgateDB.hudCollapsed) and 12 or 30))
     if self.receivedAt == 0 then interval = 1.5 end
     if self.loadElapsed >= interval then
         self.loadElapsed = 0
         if not self.exhausted then self:Load() end
         RG.UI:UpdateStatus()
+        if RG.Guide then RG.Guide:UpdateStatus() end
     end
 end
