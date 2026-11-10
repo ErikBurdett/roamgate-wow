@@ -10,6 +10,12 @@ This is an independent community integration. It uses WoW's spellbook textures,
 gold trim and gryphon ornaments to make your agents feel at home in the game.
 It requires a local companion program as well as the addon.
 
+![Roamgate work window and Adventurer's Grimoire side by side in WoW Forever, with conversation and identifying text blurred](docs/images/roamgate-grimoire-preview.png)
+
+*Privacy-edited in-game preview: the Roamgate workspace on the left and the
+Adventurer's Grimoire on the right. Conversation text, names, paths and chat
+titles are blurred; the addon layout and controls remain visible.*
+
 ## What it does
 
 - Browse workspaces and chats, read live terminals, and send tasks to your agents.
@@ -137,7 +143,9 @@ See [SECURITY.md](SECURITY.md) for the data boundaries.
 
 Code is [MIT licensed](LICENSE). Liberation Mono is bundled under its
 [SIL Open Font License](addon/Roamgate/Media/FONT-LICENSE.txt).
-WoW supplies its textures at runtime; no Blizzard artwork is distributed here.
+The addon uses WoW textures supplied by the installed client. The documentation
+preview includes in-game visuals for illustration; game artwork belongs to its
+respective owners. No standalone game asset files are bundled.
 
 Built on Roamgate and Herdr. The local optical transport was inspired by
 [T3 WoW](https://www.curseforge.com/wow/addons/t3-wow); this is an independent

@@ -52,8 +52,10 @@ Never copy from a real game AddOns tree when making a release: update `Data.lua`
 files can contain chats. Keep `.local-data`, installation snapshots, recovery
 folders, SavedVariables, screen captures and authentication data out of archives.
 Use synthetic conversations for public screenshots; real in-game rendering must
-be described separately from mock tests. WoW textures are referenced at runtime
-and are not distributed. The font and bundled dependency retain their licenses.
+be described separately from mock tests. WoW textures are referenced at runtime;
+no standalone game asset files are bundled. Documentation screenshots can include
+in-game visuals for illustration, with the notice in THIRD_PARTY_NOTICES.md.
+The font and bundled dependency retain their licenses.
 
 The repository's GitHub workflow checks Node 22 and 24 and builds/verifies the
 complete archive on Node 24. A release archive can be

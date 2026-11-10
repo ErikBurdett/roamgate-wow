@@ -8,7 +8,9 @@
   its package includes its upstream license. Complete release bundles include
   `node_modules/ws/LICENSE`; the dependency is not committed to this repository.
 - **WoW textures and standard game fonts:** referenced by in-game resource paths
-  and supplied by the installed client; not distributed in this repository.
+  and supplied by the installed client. No standalone game asset files are bundled.
+  The privacy-edited documentation screenshot includes in-game visuals for
+  illustration; their artwork belongs to the respective rights holders.
 - **Roamgate and Herdr:** separate required upstream programs, not bundled here.
   See [Roamgate](https://github.com/powerfooI/roamgate) and [Herdr](https://herdr.dev).
 - **T3 WoW:** inspiration for the transport approach; no source or images copied.
