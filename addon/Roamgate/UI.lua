@@ -421,7 +421,7 @@ function U:RenderContent()
             elseif #(browser.entries or {}) == 0 then table.insert(entries,{role="guide",text=self.view == "changes" and "No uncommitted changes." or "This folder is empty."}) end
         end
     elseif self.view == "terminal" or self.view == "questions" then
-        entries = {{role = self.QuestionMode(s) == "visible" and "question" or "terminal", text = s.screen}}
+        entries = {{role = self.QuestionMode(s) == "visible" and "question" or "terminal", text = self.view == "questions" and (s.questionScreen or s.screen) or s.screen}}
     elseif #s.entries > 0 then entries = s.entries
     else entries = {{role="fallback", text=s.transcript or s.screen}} end
     local question = self.QuestionMode(s)

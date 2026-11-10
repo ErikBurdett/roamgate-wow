@@ -40,7 +40,9 @@ the transport strip only while World of Warcraft is the focused window.
 - Click **Questions** or the HUD's question badge to review a waiting request.
   Codex's queued follow-up tray opens with its own navigation shortcut; it never
   receives an automatic Enter. Changing work output does not invalidate this
-  navigation. The displayed question still requires an exact fresh view to answer.
+  navigation. For a displayed Codex follow-up, the exact question, choices,
+  selection and typed answer must stay unchanged; background work output can
+  continue. Other permission dialogs retain the full-screen/state guard.
   Use the
   navigation/number buttons to select an option. **Confirm / Enter** asks you to
   review that selection before delivering Enter. **Cancel** sends Escape.
@@ -97,6 +99,11 @@ Game chat, guild/party messages and bag contents are not collected. Unsupported
 client APIs are handled with explicit omissions, using modern and legacy quest
 API fallbacks.
 
+If character collection fails, the Grimoire shows the error and keeps your
+draft. **Character & quests: off** allows sending without collecting a snapshot;
+answering an agent's question also works independently of character APIs.
+Startup and send failures are reported in game chat and the Grimoire footer.
+
 The guide mixes light in-world personality with practical advice, distinguishes
 Forever from Classic/retail, and is instructed to verify version-specific facts
 and acknowledge uncertainty. It advises rather than controlling the character.
@@ -144,7 +151,7 @@ Every mutation is journaled before sending. Repeated optical frames and a
 companion restart cannot automatically repeat that action. If a crash occurs
 after submission but before acknowledgement, delivery is marked uncertain; review
 the session before manually retrying. Session identity, a short-lived view proof,
-and the exact question screen are checked before question input. These checks
+and the exact question content are checked before question input. These checks
 reduce stale approvals; the terminal API does not provide a transactional
 compare-and-send operation, so another controller must not answer the same prompt
 at the same instant.

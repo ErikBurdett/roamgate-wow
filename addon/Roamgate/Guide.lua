@@ -8,6 +8,14 @@ end
 function G:CharacterKey() return RG.Character:Key() end
 function G:IsShown() return self.frame and self.frame:IsShown() end
 function G:SetNotice(text) self.noticeText=text;if self.notice then self.notice:SetText(safe(text)) end end
+function G:Run(actionName, fn)
+    local ok, result=pcall(fn)
+    if not ok then
+        self:SetNotice(actionName..": "..tostring(result))
+        print("|cffffc45cGrimoire "..actionName..":|r "..safe(result))
+    end
+    return ok, result
+end
 function G:SaveDraft()
     if not self.draftMode or not self.composer then return end
     self.saved[self.draftMode == "answer" and "answerDraft" or "draft"] = self.composer:GetText()
@@ -33,8 +41,17 @@ function G:TryOpenQuestion()
     if RG.UI.QuestionMode(s)=="queued" then RG.Transport:Send("key","shift+left","",self) end
 end
 function G:RefreshContext()
-    self.character=RG.Character:Collect();self.dirty=false
-    if not self.characterText then return end
+    local ok, character=pcall(RG.Character.Collect, RG.Character);self.dirty=false
+    if not ok then
+        self.contextError=tostring(character);self.character=nil
+        if self.characterText then self.characterText:SetText(safe("Character details unavailable.\n\n"..self.contextError)) end
+        for _,row in ipairs(self.questRows) do row:Hide() end
+        if self.questEmpty then self.questEmpty:SetText("Character context could not be read. You can turn it off below to send your own question.");self.questEmpty:Show() end
+        self:SetNotice("Character context failed. Turn off Character & quests to send without it.")
+        return false
+    end
+    self.character=character;self.contextError=nil
+    if not self.characterText then return true end
     self.characterText:SetText(safe(self.character.summary.."\n"..(self.character.coordinates or "")))
     for _,row in ipairs(self.questRows) do row:Hide() end
     for i,q in ipairs(self.character.quests) do
@@ -50,6 +67,7 @@ function G:RefreshContext()
     self.questBody:SetHeight(math.max(1,#self.character.quests*44))
     self.questEmpty:SetText(self.character.questAPI and "No active quests are available in the quest log." or "Quest details are unavailable from this client. You can type a quest name below.")
     self.questEmpty:SetShown(#self.character.quests==0)
+    return true
 end
 function G:Suggest(text)
     self:Navigate("terminal")
@@ -79,16 +97,19 @@ function G:ActionResult(sent, ack)
     end
 end
 function G:Send()
+    self:Run("Send failed",function()self:Submit()end)
+end
+function G:Submit()
     RG:Activate("guide")
     local s=self.data and self.data.selected
     if not self.newMode and RG.UI.QuestionMode(s)~="none" and self.draftMode~="answer" then
         self:SetNotice("Your game question is saved. Review the agent's request first.");self:Navigate("questions");return
     end
     local text=self.composer:GetText();if not text:match("%S") then self:SetNotice("Write a question or choose one from the left page.");return end
-    self:RefreshContext()
     if self.draftMode=="answer" and not self.newMode then
         RG.Transport:Send("answer",text,"",self);return
     end
+    if self.includeContext and not self:RefreshContext() then return end
     local context=self.includeContext and RG.Character:Text(self.character,self.questID) or ""
     RG.Transport:Send((self.newMode or not self.selected) and "guide_new" or "guide_message",text,context,self)
 end
@@ -156,10 +177,10 @@ end
 function G:Render()
     if not self.content then return end
     local s=self.data and self.data.selected;local entries
-    if self.view=="context" then entries={{role="character context",text=RG.Character:Text(self.character,self.questID)}}
+    if self.view=="context" then entries={{role="character context",text=self.character and RG.Character:Text(self.character,self.questID) or (self.contextError or "Character details have not loaded yet.")}}
     elseif s then
         if self.view=="conversation" and #(s.entries or {})>0 then entries=s.entries
-        else entries={{role=RG.UI.QuestionMode(s)=="visible" and "question · review before confirming" or "guide · live reply",text=s.screen}} end
+        else entries={{role=RG.UI.QuestionMode(s)=="visible" and "question · review before confirming" or "guide · live reply",text=self.view=="questions" and (s.questionScreen or s.screen) or s.screen}} end
     else entries={{role="Welcome, adventurer",text="Open a dedicated Roamgate chat for your journey through WoW Forever.\n\nAsk about your class, equipment, the world, or a quest. Choose a quest on the left to prepare a question with its objectives.\n\nThe guide receives a fresh character snapshot only when you send. Your work conversations stay in the other grimoire."}} end
     local key=self.view..(self.selected or "");for _,e in ipairs(entries)do key=key..e.role..e.text end
     if key==self.lastText then return end;self.lastText=key
@@ -199,5 +220,5 @@ end
 function G:Refresh()if self.dirty then self:RefreshContext()end;self:UpdateStatus();self:Render();self:TryOpenQuestion()end
 function RoamgateGuideToggle()
     if not G.frame then return end
-    if G:IsShown()then G.frame:Hide()else RG:Activate("guide");G.frame:Show();G:RefreshContext();G:Refresh();RG.Transport:RefreshSoon()end
+    if G:IsShown()then G.frame:Hide()else RG:Activate("guide");G.frame:Show();G:Run("Open failed",function()G:RefreshContext();G:Refresh()end);RG.Transport:RefreshSoon()end
 end

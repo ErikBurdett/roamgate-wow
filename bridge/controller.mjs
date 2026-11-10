@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { atomicWrite } from './files.mjs';
 import { guidePrompt } from './guide.mjs';
-import { questionMode } from './questions.mjs';
+import { questionMode, followupQuestion } from './questions.mjs';
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const identity = a => JSON.stringify([a.pane_id, a.terminal_id, a.agent, a.agent_session || null, a.cwd]);
 const visibleHash = text => hash(text.trimEnd());
@@ -57,10 +57,12 @@ export class Controller {
       return {message:'Opened the queued question. Review its text and choices before answering.'};
     }
     if (['key', 'answer'].includes(req.op)) {
-      if (agent.agent_status !== 'blocked') throw Error('The agent is no longer waiting for an answer');
       const screen = await this.herdr.read(req.pane);
+      const followup=followupQuestion(agent,screen);
+      if (!followup && agent.agent_status !== 'blocked') throw Error('The agent is no longer waiting for an answer');
       if (questionMode(agent,screen)==='queued') throw Error('Open Questions first. The queued request is not an answer field; your draft is saved.');
-      if (visibleHash(screen) !== proof.screen || agent.state_change_seq !== proof.seq) throw Error('The question changed. Review the current question before answering.');
+      const sameQuestion=followup && proof.followup ? visibleHash(followup)===proof.followup : !followup && !proof.followup && visibleHash(screen)===proof.screen && agent.state_change_seq===proof.seq;
+      if (!sameQuestion) throw Error('The question changed. Review the current question before answering.');
       // Consume even when the downstream write is uncertain.
       this.proofs.delete(req.proof);
       if (req.op === 'key') {
@@ -116,7 +118,7 @@ export class Controller {
     if (!selected || !req.visible) return data;
     const selectedIdentity = identity(selected);
     let captured = this.screens.get(req.pane);
-    const screenTTL = selected.agent_status === 'blocked' || (captured && questionMode(selected,captured.text)==='queued') ? 2000 : selected.agent_status === 'working' ? 5000 : 12000;
+    const screenTTL = selected.agent_status === 'blocked' || (captured && questionMode(selected,captured.text)!=='none') ? 2000 : selected.agent_status === 'working' ? 5000 : 12000;
     if (!captured || captured.identity !== selectedIdentity || captured.seq !== selected.state_change_seq || this.clock() - captured.at >= screenTTL) {
       const text = selected.agent ? await this.herdr.read(req.pane) : await this.herdr.readPane(req.pane);
       captured = {identity:selectedIdentity,seq:selected.state_change_seq,at:this.clock(),text};this.screens.set(req.pane,captured);
@@ -146,11 +148,12 @@ export class Controller {
       try { if (selected.agent) text = await this.herdr.read(req.pane, false); } catch {}
       transcript = {identity:selectedIdentity,at:this.clock(),text}; this.transcripts.set(req.pane,transcript);
     }
-    const proofKey = hash(identity(selected) + ':' + selected.state_change_seq + ':' + visibleHash(screen));
-    const proof = { pane: req.pane, identity: identity(selected), screen: visibleHash(screen), seq: selected.state_change_seq, at: captured.at };
+    const followup=followupQuestion(selected,screen);
+    const proofKey = hash(identity(selected) + ':' + (followup ? 'followup:'+visibleHash(followup) : selected.state_change_seq + ':' + visibleHash(screen)));
+    const proof = { pane: req.pane, identity: identity(selected), screen: visibleHash(screen), followup:followup ? visibleHash(followup) : null, seq: selected.state_change_seq, at: captured.at };
     this.proofs.set(proofKey, proof);
     for (const [key, value] of this.proofs) if (this.clock() - value.at > 45000) this.proofs.delete(key);
-    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, questionMode:questionMode(selected,screen), transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
+    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, questionScreen:followup || screen, questionMode:questionMode(selected,screen), transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
     if (req.op === 'view' && (['files', 'file', 'changes'].includes(req.text) || req.text?.startsWith('diff:'))) {
       const key = JSON.stringify([selected.workspace_id, req.text, req.extra]);
       const cached = this.browserCache.get(key);

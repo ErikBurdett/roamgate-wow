@@ -82,7 +82,7 @@ events:SetScript("OnEvent", function(_, event)
         RoamgateDB = RoamgateDB or {}; RoamgateDB.drafts = RoamgateDB.drafts or {}
         RG.selected = RoamgateDB.selected
         RG.UI:Build(); RG.Transport:Start()
-        RG.Guide:Build()
+        RG.Guide:Run("Startup failed",function()RG.Guide:Build()end)
         RG:InstallBinding()
         SLASH_ROAMGATE1, SLASH_ROAMGATE2 = "/rg", "/roamgate"
         SlashCmdList.ROAMGATE = function(msg)

@@ -43,6 +43,26 @@ test('user-selected question controls and paste are separate operations',async t
   const f=await fixture(t,'blocked');await f.controller.handle({...f.command,op:'answer',text:'My answer'});assert.deepEqual(f.calls,[['answer','w1:p1','My answer']]);
 });
 const queuedScreen='Working on your task\nQueued follow-up inputs\n ? 1 question\n shift+← to answer';
+const followupScreen='• Queued follow-up inputs\n\n  1 of 2\n  Which quest should we inspect?\n\n  › 1. First quest\n    2. Other\n\n  enter submit   ^] skip   shift+→ main prompt   shift+← next question';
+test('displayed follow-up answers tolerate only changes outside the exact question tray',async t=>{
+  for (const action of [{op:'answer',text:'A quest name'},{op:'key',text:'enter'}]) {
+    const f=await fixture(t,'blocked');f.screen('Working (3m 05s)\n\n'+followupScreen);f.controller.screens.clear();
+    const before=await f.controller.handle(f.view);assert.equal(before.selected.questionMode,'visible');
+    f.screen('More work output\nWorking (3m 08s)\n\n'+followupScreen);f.agent.state_change_seq++;
+    const refreshed=await f.controller.handle(f.view);
+    assert.equal(refreshed.selected.proof,before.selected.proof);assert.equal(refreshed.selected.questionScreen,followupScreen);
+    const result=await f.controller.handle({...f.command,proof:before.selected.proof,...action});
+    assert.equal(result.ack.state,'ok');assert.equal(f.calls.length,1);
+  }
+});
+test('changed follow-up question, selected choice, or dismissed tray rejects Enter',async t=>{
+  for (const changed of [followupScreen.replace('First quest','A different quest'),followupScreen.replace('1 of 2','2 of 2'),followupScreen.replace('› 1.','  1.').replace('  2.','› 2.'),'Ask Codex to do anything']) {
+    const f=await fixture(t,'blocked');f.screen(followupScreen);f.controller.screens.clear();
+    const before=await f.controller.handle(f.view);f.screen(changed);
+    const result=await f.controller.handle({...f.command,proof:before.selected.proof,op:'key',text:'enter'});
+    assert.equal(result.ack.state,'error');assert.equal(f.calls.length,0);
+  }
+});
 test('the question shortcut opens queued prompts despite changing work output without submitting Enter',async t=>{
   const f=await fixture(t,'blocked');f.screen(queuedScreen);f.controller.screens.clear();
   const before=await f.controller.handle(f.view);assert.equal(before.selected.questionMode,'queued');

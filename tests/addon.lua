@@ -77,7 +77,13 @@ function GetCurrentBindingSet() return 1 end
 RoamgateDB={drafts={}}
 C_AddOns={LoadAddOn=function() return true end}
 for _, name in ipairs({"Config","Transport","Theme","Character","UI","Guide","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
+local startupCollect=RG.Character.Collect
+RG.Character.Collect=function()error("Character startup API failure")end
 local login=all[#all];login.scripts.OnEvent(login,"PLAYER_LOGIN")
+check(type(SlashCmdList.ROAMGATEGUIDE)=="function","a character read error cannot prevent /rgg registration")
+check(RG.Guide.contextError and RG.Guide.characterText:GetText():find("startup API failure",1,true),"startup error remains visible instead of a blank character page")
+RG.Character.Collect=startupCollect;RG.Guide:RefreshContext()
+check(not RG.Guide.contextError and RG.Guide.character.name=="Adventurer","character page recovers after a successful read")
 check(not RG.UI:IsShown(),"starts closed")
 check(RG.UI.view=="terminal","Live terminal is the default view")
 check(bindings["ALT-R"]=="ROAMGATE_TOGGLE","Alt+R default toggle binding installed")
@@ -202,5 +208,17 @@ check(RG.Transport.pending.op=="answer","guide pastes the explicit answer")
 RG.Guide:ActionResult(RG.Transport.pending,{state="ok",message="Pasted"});RG.Transport.pending=nil
 gs.status="idle";gs.questionMode="none";RG.Guide:Receive(guideData)
 check(RG.Guide.composer:GetText()=="My next game question","guide restores its question after answering")
+local collect=RG.Character.Collect
+RG.Character.Collect=function()error("Character API unavailable")end
+check(not RG.Guide:RefreshContext() and RG.Guide.characterText:GetText():find("Character API unavailable",1,true),"character read failures are visible in the Grimoire")
+RG.Guide.includeContext=true;RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
+check(not RG.Transport.pending and RG.Guide.composer:GetText()=="My next game question","Enter preserves the draft when requested context cannot load")
+RG.Guide.includeContext=false;RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
+check(RG.Transport.pending.op=="guide_message" and RG.Transport.pending.extra=="","Enter sends without invoking broken character APIs when context is off")
+RG.Transport.pending=nil
+gs.status="blocked";gs.questionMode="visible";RG.Guide:Navigate("questions");RG.Guide.includeContext=true
+RG.Guide.composer:SetText("A reviewed answer");RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
+check(RG.Transport.pending.op=="answer","answering an agent never depends on character collection")
+RG.Transport.pending=nil;RG.Character.Collect=collect
 check(bindings["ALT-G"]=="ROAMGATE_GUIDE","Alt+G opens the guide without changing Alt+R")
 print("Lua addon contract: "..checks.." checks passed")
