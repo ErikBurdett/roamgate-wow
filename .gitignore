@@ -3,3 +3,13 @@ dist/
 .local-data/
 .cache/
 *.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+WTF/
+Screenshots/
+SavedVariables/
+RoamgateData*/

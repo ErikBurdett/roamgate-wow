@@ -1,0 +1,13 @@
+name: Feature request
+description: Suggest an improvement to the in-game workflow.
+body:
+  - type: textarea
+    attributes:
+      label: What would this help you do?
+      description: Describe the task and where the current workflow gets in your way.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior
+      description: Include the window involved and an example interaction.

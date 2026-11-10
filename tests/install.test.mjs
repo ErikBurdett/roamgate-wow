@@ -8,7 +8,8 @@ import { serviceUnit } from '../scripts/unit.mjs';
 test('generated systemd unit passes the systemd parser',async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'rg-unit-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   const file=path.join(dir,'roamgate-wow.service');await fs.writeFile(file,serviceUnit(process.cwd(),process.execPath));
-  execFileSync('systemd-analyze',['--user','verify',file],{stdio:'pipe'});
+  // CI has no logged-in desktop or live user bus. Parsing must work offline.
+  execFileSync('systemd-analyze',['--user','verify',file],{stdio:'pipe',env:{...process.env,XDG_RUNTIME_DIR:dir,DBUS_SESSION_BUS_ADDRESS:'unix:path=/nonexistent'}});
 });
 test('staging creates valid load-on-demand addons and preserves a published snapshot on update',async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'rg-stage-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));

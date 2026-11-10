@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Herdr } from './herdr.mjs';
@@ -9,17 +8,12 @@ import { Desktop } from './desktop.mjs';
 import { Assembler } from './protocol.mjs';
 import { GuideSessions } from './guide.mjs';
 import { atomicWrite, publish } from './files.mjs';
+import { readConfig } from './config.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const home = os.homedir();
-export const defaultAddonDir = path.join(home, 'Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/Interface/AddOns');
-async function config() {
-  let c = {};
-  try { c = JSON.parse(await fs.readFile(path.join(root, '.local-data/config.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  return { addonDir: defaultAddonDir, slots: 2048, mode: 'interactive', ...c };
-}
+const config = () => readConfig(root);
 async function doctor() {
-  const c = await config(), herdr = new Herdr(), roamgate = new Roamgate(), desktop = new Desktop();
-  const result = { addonDir: c.addonDir, mode: c.mode, slots: c.slots };
+  const c = await config(), herdr = new Herdr(), roamgate = new Roamgate({origin:c.origin}), desktop = new Desktop();
+  const result = { addonDir: c.addonDir, mode: c.mode, slots: c.slots, origin:c.origin };
   try { const agents = await herdr.agents(); result.herdr = { connected: true, agents: agents.length }; }
   catch (e) { result.herdr = { connected: false, error: e.message }; }
   try { await roamgate.connect(); result.roamgate = { connected: true, connection: roamgate.connection }; }
@@ -45,7 +39,7 @@ async function run() {
     await fs.unlink(lockPath);
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const lock = await fs.open(lockPath, 'wx', 0o600); await lock.writeFile(String(process.pid)); await lock.close();
-  const herdr = new Herdr(), roamgate = new Roamgate(), desktop = new Desktop(), assembler = new Assembler();
+  const herdr = new Herdr(), roamgate = new Roamgate({origin:c.origin}), desktop = new Desktop(), assembler = new Assembler();
   const guide = new GuideSessions({herdr,directory:path.join(stateDir,'adventurer')}); await guide.init();
   const controller = new Controller({ herdr, roamgate, guide, journal: path.join(stateDir, 'actions.json'), mode: c.mode, slots: c.slots });
   let stopped = false, request = null, lastPublish = 0, lastId = '', errorAt = 0;

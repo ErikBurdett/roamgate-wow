@@ -5,19 +5,32 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { serviceUnit } from './unit.mjs';
 import { bundleUI } from './bundle.mjs';
+import { readConfig } from '../bridge/config.mjs';
+import { installOptions, HELP } from './options.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const {version} = JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
-const args = process.argv.slice(2), stage = args.includes('--stage');
-const arg = key => args.includes(key) ? args[args.indexOf(key) + 1] : undefined;
+const args = process.argv.slice(2);
+if(args.includes('--help')) { console.log(HELP);process.exit(0); }
+const {config,stage,install,service}=installOptions(args,await readConfig(root));
 const home = os.homedir();
-const destination = path.resolve(arg('--stage') || arg('--addon-dir') || path.join(home, 'Games/battlenet/drive_c/Program Files (x86)/World of Warcraft/_forever_/Interface/AddOns'));
-const slots = Number(arg('--slots') || 2048);
-if (!Number.isInteger(slots) || slots < 16 || slots > 4096) throw Error('Use 16–4096 data slots');
-if (!stage && !args.includes('--install')) {
-  console.log(JSON.stringify({ action: 'install plan (no changes)', destination, source: root, slots, service: path.join(home, '.config/systemd/user/roamgate-wow.service'), start: args.includes('--service'), command: 'Add --install to apply' }, null, 2));
+const destination=config.addonDir, slots=config.slots;
+const serviceFile=path.join(home,'.config/systemd/user/roamgate-wow.service');
+if (!stage && !install) {
+  console.log(JSON.stringify({ action: 'install plan (no changes)', destination, source: root, slots, mode:config.mode, origin:config.origin, service: serviceFile, start: service, command: 'Add --install to apply' }, null, 2));
   process.exit(0);
 }
-await fs.mkdir(destination, { recursive: true });
+let oldUnit;
+if(service) {
+  try {oldUnit=await fs.readFile(serviceFile,'utf8');}catch(e){if(e.code!=='ENOENT')throw e;}
+  if(oldUnit && !oldUnit.includes(`# Owner: ${root}\n`))throw Error('A service owned by another installation already exists');
+  // Check availability before writing the addon, not halfway through installation.
+  execFileSync('systemctl',['--user','show-environment'],{stdio:'ignore'});
+}
+if(stage) await fs.mkdir(destination,{recursive:true});
+else {
+  try {if(!(await fs.stat(destination)).isDirectory())throw Error('not a directory');}
+  catch {throw Error('Addon directory not found. Locate your WoW client’s Interface/AddOns directory and pass --addon-dir /absolute/path/to/Interface/AddOns.');}
+}
 const addon = path.join(destination, 'Roamgate'), ownerFile = path.join(addon, '.roamgate-wow-owner.json');
 let existing;
 try { existing = JSON.parse(await fs.readFile(ownerFile, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -49,12 +62,10 @@ for (let i = 1; i <= slots; i++) {
 await fs.writeFile(ownerFile, JSON.stringify({ source: root, slots, version }, null, 2));
 if (!stage) {
   const state = path.join(root, '.local-data'); await fs.mkdir(state, { recursive: true, mode: 0o700 });
-  await fs.writeFile(path.join(state, 'config.json'), JSON.stringify({ addonDir: destination, slots, mode: args.includes('--read-only') ? 'read-only' : 'interactive' }, null, 2), { mode: 0o600 });
-  if (args.includes('--service')) {
-    const file = path.join(home, '.config/systemd/user/roamgate-wow.service');
-    let old; try { old = await fs.readFile(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    if (old && !old.includes(`# Owner: ${root}\n`)) throw Error('A service owned by another installation already exists');
-    if (old) await fs.writeFile(file + '.bak', old);
+  await fs.writeFile(path.join(state, 'config.json'), JSON.stringify(config, null, 2), { mode: 0o600 });
+  if (service) {
+    const file = serviceFile;
+    if (oldUnit) await fs.writeFile(file + '.bak', oldUnit);
     const unit = serviceUnit(root, process.execPath);
     const stagedUnit = path.join(state, 'roamgate-wow.service');
     await fs.writeFile(stagedUnit, unit);

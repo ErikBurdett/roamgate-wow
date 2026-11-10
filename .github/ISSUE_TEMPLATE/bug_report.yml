@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible alpha problem.
+body:
+  - type: markdown
+    attributes:
+      value: "Please remove tokens, character/account identifiers and private chat content from diagnostics or screenshots."
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include what you expected, what happened, and steps to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Addon commit/version, WoW build, Linux distribution, Hyprland, Wine, Node, Herdr and Roamgate versions.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Redacted diagnostics
+      description: Relevant npm run doctor results, Lua error text, or a short companion log excerpt. Do not upload .local-data or WTF.
+  - type: checkboxes
+    attributes:
+      label: Privacy
+      options:
+        - label: I removed credentials and private conversation content from this report.
+          required: true
