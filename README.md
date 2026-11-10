@@ -26,7 +26,8 @@ the transport strip only while World of Warcraft is the focused window.
 - The **HUD** shows the followed conversation, working/waiting counts and unread
   notifications. Click its thread, question badge, or activity button to open the
   relevant session. It never steals focus for an alert. **− / +** collapses or
-  expands it; `/rg hud` hides or shows it.
+  expands it; `/rg hud` hides or shows it. **Open workspace** and **Open grimoire**
+  open the two books independently.
 - **Files** browses the selected workspace's folders and text files. **Changes**
   lists working-tree changes and opens their patches. These use Roamgate's own
   workspace roots and read-only APIs. Slow reads load in the background. A preview
@@ -61,8 +62,12 @@ The minimap badge counts waiting agents. Sounds and chat notifications announce
 new blocked/finished states; combat defers the notification. `/rg sound` toggles
 sound. `/rg scale 0.85` adjusts the panel, and the bottom right corner resizes it.
 The keybinding is under **Options → Keybindings → AddOns → Roamgate**.
-**Alt+R** is assigned on first load if that key is free; an existing binding is
-preserved. Minimizing keeps the current view, draft, and scroll position. Cached
+**Alt+R** minimizes both the work window and Adventurer's Grimoire. Press it again
+to restore whichever windows were open, with the same active book, drafts and
+scroll positions. It leaves the HUD and minimap buttons available and does not
+cancel a message already sending. It is assigned on first load if that key is
+free; an existing binding is preserved. `/rg` and the portal minimap button still
+toggle just the work window. Cached
 conversations appear immediately on restore; action controls wait for a fresh
 selection. Long text is split into bounded Unicode-safe blocks for native rendering.
 When history is not linked, Conversation shows recent unwrapped terminal text and
@@ -71,7 +76,8 @@ exact current screen.
 
 ## Adventurer's Grimoire
 
-Open **`/rgg`**, **`/rg guide`**, **Alt+G** (assigned only if free), or the
+Open **`/rgg`**, **`/rg guide`**, **Alt+G** (assigned only if free), the HUD's
+**Open grimoire** button, the **book icon beside the minimap portal**, or the
 **Adventurer's Grimoire** button in the work window. This is a separate movable
 window; opening it preserves your work chat and draft. Both windows may remain
 open. The window you last interact with receives the detailed refreshes; the

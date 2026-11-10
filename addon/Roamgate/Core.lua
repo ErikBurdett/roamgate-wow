@@ -54,8 +54,28 @@ function RoamgateToggle()
     if not RG.UI.frame then return end
     if RG.UI:IsShown() then RG.UI.frame:Hide() else RG:Activate("work"); RG.UI.frame:Show(); RG.Transport:RefreshSoon(); RG.UI:Refresh() end
 end
+function RoamgateToggleWindows()
+    if not RG.UI.frame then return end
+    local work, guide = RG.UI:IsShown(), RG.Guide and RG.Guide:IsShown()
+    if work or guide then
+        RG.minimizedWindows = {work=work,guide=guide,active=RG.activeSurface}
+        if work then RG.UI.frame:Hide() end
+        if guide then RG.Guide.frame:Hide() end
+        StaticPopup_Hide("ROAMGATE_CONFIRM"); StaticPopup_Hide("ROAMGATE_GUIDE_CONFIRM")
+        RG.UI.confirmProof=nil; RG.Guide.confirmProof=nil
+    else
+        local restore = RG.minimizedWindows or {work=true,active="work"}
+        RG.minimizedWindows=nil
+        if restore.work then RoamgateToggle() end
+        if restore.guide then RG.Guide:Open() end
+        local active = restore.active=="guide" and restore.guide and "guide" or (restore.work and "work" or "guide")
+        RG:Activate(active)
+        local ui = active=="guide" and RG.Guide or RG.UI
+        ui.frame:Raise()
+    end
+end
 BINDING_HEADER_ROAMGATE = "Roamgate"
-BINDING_NAME_ROAMGATE_TOGGLE = "Minimize / restore workspace"
+BINDING_NAME_ROAMGATE_TOGGLE = "Minimize / restore both Roamgate windows"
 BINDING_NAME_ROAMGATE_GUIDE = "Open Adventurer's Grimoire"
 function RG:InstallBinding()
     if InCombatLockdown() then self.bindingDeferred = true; return end

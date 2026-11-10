@@ -1,4 +1,4 @@
 <Bindings>
-  <Binding name="ROAMGATE_TOGGLE" header="ROAMGATE">RoamgateToggle()</Binding>
+  <Binding name="ROAMGATE_TOGGLE" header="ROAMGATE">RoamgateToggleWindows()</Binding>
   <Binding name="ROAMGATE_GUIDE" header="ROAMGATE">RoamgateGuideToggle()</Binding>
 </Bindings>

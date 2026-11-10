@@ -218,7 +218,17 @@ function G:UpdateStatus()
     if RG.Transport.pending and RG.Transport.pending.scope=="guide" and GetTime()-RG.Transport.pendingAt>25 then self:SetNotice("Waiting for guide startup or delivery. Your question is retained; do not resend it yet.")end
 end
 function G:Refresh()if self.dirty then self:RefreshContext()end;self:UpdateStatus();self:Render();self:TryOpenQuestion()end
+function G:Open()
+    if not self.frame then return end
+    local wasShown=self:IsShown()
+    RG:Activate("guide");self.frame:Show();self.frame:Raise()
+    self:Run("Open failed",function()
+        if not wasShown or self.dirty or not self.character then self:RefreshContext() end
+        self:Refresh()
+    end)
+    RG.Transport:RefreshSoon()
+end
 function RoamgateGuideToggle()
     if not G.frame then return end
-    if G:IsShown()then G.frame:Hide()else RG:Activate("guide");G.frame:Show();G:Run("Open failed",function()G:RefreshContext();G:Refresh()end);RG.Transport:RefreshSoon()end
+    if G:IsShown()then G.frame:Hide()else G:Open()end
 end

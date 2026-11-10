@@ -68,6 +68,7 @@ function IsShiftKeyDown() return false end
 function PlaySound() end
 function ReloadUI() end
 function StaticPopup_Show(name) _G.popup=name end
+function StaticPopup_Hide(name) if _G.popup==name then _G.popup=nil end end
 local bindings={}
 function GetBindingKey(action) for key, value in pairs(bindings) do if value==action then return key end end end
 function GetBindingAction(key) return bindings[key] or "" end
@@ -131,7 +132,7 @@ data.workspaces={{id="w1",name="Project",count=1}};RG:Receive(data);RG.UI:Worksp
 RG.UI.workspaceMenu.buttons[2].scripts.OnClick();check(RG.UI.workspaceFilter=="w1","workspace selection filters all panes")
 RG.UI.frame:Hide();RG.UI:Notify(s)
 check(not RG.UI:IsShown(),"HUD notification does not steal game focus")
-check(RG.UI.hudNews:GetText()=="1 new notification","HUD counts unread activity")
+check(RG.UI.hudNews:GetText()=="1 new","HUD counts unread activity")
 RG.UI:OpenPane(s.pane);check(RG.UI.unread[s.pane]==nil,"opening a thread clears its local notification")
 RG.UI.hudCollapse.scripts.OnClick();check(RG.UI.hud:GetHeight()==42,"HUD collapses to one bar")
 RG.UI:Navigate("conversation","");s.status="idle";RG:Receive(data)
@@ -248,4 +249,31 @@ do
     UnitHealth,UnitStat,C_Map,C_QuestLog=oldHealth,oldStats,oldMap,oldQuests
 end
 check(bindings["ALT-G"]=="ROAMGATE_GUIDE","Alt+G opens the guide without changing Alt+R")
+do
+    local bindingFile=assert(io.open("addon/Roamgate/Bindings.xml"));local bindingXML=bindingFile:read("*a");bindingFile:close()
+    local toggleWindows=assert(loadstring(assert(bindingXML:match('<Binding name="ROAMGATE_TOGGLE"[^>]*>(.-)</Binding>'))))
+    RG.UI.frame:Show();RG.Guide:Open();RG.UI:Navigate("terminal","");RG:Activate("guide")
+    local workPane,guidePane=RG.selected,RG.Guide.selected
+    RG.UI.composer:SetText("Preserve work");RG.Guide.composer:SetText("Preserve adventure")
+    RG.UI.scroll:SetVerticalScroll(120);RG.Guide.scroll:SetVerticalScroll(80)
+    RG.UI.composer:SetFocus();RG.Guide.composer:SetFocus();StaticPopup_Show("ROAMGATE_GUIDE_CONFIRM")
+    local inFlight={scope="guide",op="guide_message",text="Already sending"};RG.Transport.pending=inFlight;RG.Transport.pendingAt=now
+    toggleWindows()
+    check(not RG.UI:IsShown() and not RG.Guide:IsShown() and not RG.UI.composer.focused and not RG.Guide.composer.focused and not popup,"Alt+R hides both books and releases input and confirmation popups")
+    check(RG.Transport.pending==inFlight,"minimizing preserves an in-flight action")
+    toggleWindows()
+    check(RG.UI:IsShown() and RG.Guide:IsShown() and RG.activeSurface=="guide","Alt+R restores both books and the previously active guide")
+    check(RG.UI.composer:GetText()=="Preserve work" and RG.Guide.composer:GetText()=="Preserve adventure" and RG.UI.scroll:GetVerticalScroll()==120 and RG.Guide.scroll:GetVerticalScroll()==80,"restore preserves both drafts and scroll positions")
+    RG.Transport.pending=nil;toggleWindows()
+    RoamgateDB.hudCollapsed=false;RG.UI:UpdateHUD();RG.UI.hudGuide.scripts.OnClick()
+    check(RG.Guide:IsShown() and not RG.UI:IsShown() and RG.selected==workPane and RG.Guide.selected==guidePane,"HUD opens the existing guide independently without switching conversations")
+    RG.UI.hudGuide.scripts.OnClick();check(RG.Guide:IsShown(),"Open grimoire keeps an already open guide visible")
+    toggleWindows();toggleWindows()
+    check(RG.Guide:IsShown() and not RG.UI:IsShown(),"Alt+R restores only the guide when it alone was minimized")
+    RG.UI.guideMinimap.scripts.OnClick();check(not RG.Guide:IsShown(),"book minimap button toggles the guide closed")
+    RG.UI.guideMinimap.scripts.OnClick();check(RG.Guide:IsShown() and RG.activeSurface=="guide" and not RG.Transport.pending,"book minimap button reopens the guide without sending a message")
+    toggleWindows();RoamgateMinimap.scripts.OnClick();toggleWindows();toggleWindows()
+    check(RG.UI:IsShown() and not RG.Guide:IsShown() and RG.activeSurface=="work","work minimap remains independent and work-only Alt+R restoration works")
+    RG.UI.hudCollapse.scripts.OnClick();check(not RG.UI.hudGuide:IsShown(),"collapsed HUD hides its guide button")
+end
 print("Lua addon contract: "..checks.." checks passed")
