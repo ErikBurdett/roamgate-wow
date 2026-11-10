@@ -15,7 +15,8 @@ against another installed addon.
   recorder can observe it. Avoid showing that corner while streaming private work.
 - Conversation snapshots are local plaintext in generated AddOns files. Drafts
   and window state live in WoW SavedVariables. `.local-data` contains routing,
-  action receipts, saved guide views and install backups. Protect these like chat
+  action receipts, saved guide views and install backups. Uninstall also retains
+  private recovery copies beside AddOns. Protect these like chat
   history; they are not encrypted exports.
 - Grimoire context is attached only when sending with context enabled. It includes
   readable character/equipment/location/quest data. Protected game values are

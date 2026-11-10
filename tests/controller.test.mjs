@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {testModels} from './model-fixture.mjs';
 import { Controller } from '../bridge/controller.mjs';
 async function fixture(t, status='idle') {
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'rg-wow-test-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   const agent={pane_id:'w1:p1',terminal_id:'t1',agent:'codex',agent_status:status,state_change_seq:12,cwd:'/project',workspace_id:'w1',terminal_title:'A project'};
   let screen='Approve command?\n> 1. Allow once\n  2. Decline', now=100000;
   const calls=[];
-  const herdr={agents:async()=>[{...agent}],workspaces:async()=>[{workspace_id:'w1',label:'Project'}],get:async()=>({...agent}),read:async()=>screen,
+  const herdr={modelChoices:testModels,agents:async()=>[{...agent}],workspaces:async()=>[{workspace_id:'w1',label:'Project'}],get:async()=>({...agent}),read:async()=>screen,
     prompt:async(...a)=>{calls.push(['prompt',...a]);},key:async(...a)=>{calls.push(['key',...a]);},answer:async(...a)=>{calls.push(['answer',...a]);},newChat:async(...a)=>{calls.push(['new',...a]);return 'w1:p2';}};
   const opts={herdr,roamgate:{history:async()=>({entries:[{role:'assistant',text:'Ready.'}]})},journal:path.join(dir,'journal.json'),clock:()=>now};
   const controller=new Controller(opts);await controller.init();

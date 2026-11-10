@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {testModels} from './model-fixture.mjs';
 import {GuideSessions,guidePrompt} from '../bridge/guide.mjs';
 import {Controller} from '../bridge/controller.mjs';
 test('game advice includes version-aware guidance and bounded observations',()=>{
@@ -13,7 +14,7 @@ test('game advice includes version-aware guidance and bounded observations',()=>
 test('guide creation uses a dedicated unfocused workspace and persists character routing before startup',async t=>{
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'rg-guide-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
   const commands=[], prompts=[];let workspaceExists=false;
-  const herdr={workspaces:async()=>workspaceExists?[{workspace_id:'wG'}]:[],command:async args=>{
+  const herdr={modelChoices:testModels,workspaces:async()=>workspaceExists?[{workspace_id:'wG'}]:[],command:async args=>{
     commands.push(args);
     if(args[0]==='workspace'){workspaceExists=true;return{workspace:{workspace_id:'wG'},root_pane:{pane_id:'wG:p1',terminal_id:'t1'}};}
     if(args[0]==='tab')return{tab:{workspace_id:'wG'},root_pane:{pane_id:'wG:p2',terminal_id:'t2'}};
@@ -22,11 +23,11 @@ test('guide creation uses a dedicated unfocused workspace and persists character
   },prompt:async(...args)=>prompts.push(args)};
   const guide=new GuideSessions({herdr,directory});await guide.init();await guide.create('Player-1-abc','Help with this quest','Quest 123');
   assert.ok(commands[0].includes('--no-focus'));assert.ok(commands[0].includes(directory));assert.equal(prompts[0][0],'wG:p1');
-  assert.deepEqual(commands[1].slice(3),['--kind','claude','--pane','wG:p1','--','--model','sonnet']);
+  assert.deepEqual(commands[1].slice(3),['--kind','claude','--pane','wG:p1']);
   const restored=new GuideSessions({herdr,directory});await restored.init();assert.equal(restored.binding('Player-1-abc').pane,'wG:p1');
   await restored.create('Player-1-abc','A fresh guide chat','','codex','gpt-6-astra');assert.equal(restored.binding('Player-1-abc').pane,'wG:p2');assert.equal(commands[2][0],'tab');
   assert.deepEqual(commands[3].slice(3),['--kind','codex','--pane','wG:p2','--','--model','gpt-6-astra']);
-  assert.equal(restored.history('Player-1-abc').length,2);assert.equal(restored.history('Player-1-abc')[0].model,'sonnet');
+  assert.equal(restored.history('Player-1-abc').length,2);assert.equal(restored.history('Player-1-abc')[0].model,'');
   assert.equal(restored.binding('__proto__'),undefined);
 });
 test('guide history migrates the old binding, discovers workspace chats and persists explicit selection',async t=>{

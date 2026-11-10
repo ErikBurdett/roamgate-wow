@@ -9,7 +9,8 @@ import { Assembler } from './protocol.mjs';
 import { GuideSessions } from './guide.mjs';
 import { atomicWrite, publish } from './files.mjs';
 import { readConfig } from './config.mjs';
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import {loadModelChoices} from './models.mjs';
+const root = process.env.ROAMGATE_WOW_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const config = () => readConfig(root);
 async function doctor() {
   const c = await config(), herdr = new Herdr(), roamgate = new Roamgate({origin:c.origin}), desktop = new Desktop();
@@ -31,6 +32,8 @@ async function run() {
   if (!['interactive', 'read-only'].includes(c.mode) || !Number.isInteger(c.slots) || c.slots < 16 || c.slots > 4096) throw Error('Invalid companion configuration');
   const owner = JSON.parse(await fs.readFile(path.join(c.addonDir, 'Roamgate/.roamgate-wow-owner.json'), 'utf8'));
   if (owner.source !== root || owner.slots !== c.slots) throw Error('Addon ownership or slot count differs from this installation');
+  const models=await loadModelChoices({overrideFile:path.join(root,'.local-data/models.json')});
+  for(const warning of models.warnings)console.warn(warning);
   const stateDir = path.join(root, '.local-data'); await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
   const lockPath = path.join(stateDir, 'bridge.pid');
   try {
@@ -39,7 +42,7 @@ async function run() {
     await fs.unlink(lockPath);
   } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const lock = await fs.open(lockPath, 'wx', 0o600); await lock.writeFile(String(process.pid)); await lock.close();
-  const herdr = new Herdr(), roamgate = new Roamgate({origin:c.origin}), desktop = new Desktop(), assembler = new Assembler();
+  const herdr = new Herdr({modelChoices:models.choices}), roamgate = new Roamgate({origin:c.origin}), desktop = new Desktop(), assembler = new Assembler();
   const guide = new GuideSessions({herdr,directory:path.join(stateDir,'adventurer')}); await guide.init();
   const controller = new Controller({ herdr, roamgate, guide, journal: path.join(stateDir, 'actions.json'), mode: c.mode, slots: c.slots });
   let stopped = false, request = null, lastPublish = 0, lastId = '', errorAt = 0;

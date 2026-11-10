@@ -14,15 +14,14 @@ Install these through your distribution or existing development environment:
 
 | Tool | Purpose |
 | --- | --- |
-| Git | Clone/update the project |
-| Node.js 22+ and npm | Run the companion and install its locked dependency |
-| Lua 5.1 (`lua5.1` command) | Run the addon contract tests |
+| Git (optional) | Clone/update source; unnecessary for a release archive |
+| Node.js 22+ and npm | Run the companion/setup; source downloads need `npm ci` |
+| Lua 5.1 (`lua5.1` command), contributors only | Run addon contract tests |
 | `hyprctl` | Locate the focused game window |
 | `grim` | Capture the small signal region |
-| `systemctl`, `systemd-analyze` | User service and unit-file validation |
+| `systemctl`, `systemd-analyze` (service mode) | User service and unit-file validation |
 
-Check with `node --version`, `npm --version`, `lua5.1 -v`, and
-`command -v hyprctl grim systemctl systemd-analyze`. No root access is needed
+The setup checker reports missing tools with suggested fixes. No root access is needed
 for the addon installer; installing missing OS packages may require it.
 
 ## 2. Make Herdr and Roamgate work first
@@ -62,20 +61,23 @@ plan and install commands. This changes only the companion's destination.
 Remote hosts, HTTPS proxies and credentials in URLs are rejected. Custom socket
 locations and custom config homes are not currently supported.
 
-## 3. Get and check this repository
+## 3. Get the project
 
-Clone this repository using its GitHub **Code** URL, or download its source ZIP,
-then open a terminal in the extracted folder. Choose a stable folder you will
-keep: the service uses this checkout and its `node_modules` directory.
+Choose a stable folder you will keep: it owns your local configuration, guide
+history and installed runtime snapshots.
 
-```bash
-npm ci --ignore-scripts
-npm run check
-```
+- **Complete release:** download `roamgate-wow-VERSION.tar.gz` and its matching
+  `.sha256` file from the same release. Verify with `sha256sum -c FILE.sha256`,
+  then extract the archive. The companion, addon sources, installer, runtime
+  dependency, documentation and licenses are included. Node and the external
+  programs in sections 1–2 are still required.
+- **Git clone / GitHub source ZIP:** open a terminal in the project folder and
+  run `npm ci --omit=dev --ignore-scripts`. These downloads do not bundle dependencies.
 
-Tests use fake adapters and temporary directories. They do not require a running
-game or provider account, and do not send messages to real agents. Source ZIPs
-can run the checks too; the optional `--history` publication audit needs a Git clone.
+The complete bundle can be verified again after extraction with
+`node scripts/verify-release.mjs`. See [release packaging](RELEASING.md).
+Contributor tests are optional for normal installation; they require Lua 5.1
+and the tools in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## 4. Locate the actual addon directory
 
@@ -92,18 +94,25 @@ the installer refuses to create a game tree at a mistyped path.
 
 ```bash
 WOW_ADDONS="/absolute/path/to/World of Warcraft/_forever_/Interface/AddOns"
-node scripts/install.mjs --addon-dir "$WOW_ADDONS" --service
+npm run setup -- --addon-dir "$WOW_ADDONS"
 ```
 
-That prints a plan without changing anything. Check the destination, local
+That checks dependencies, the graphical session, Herdr and the authenticated
+local Roamgate connection, then prints a plan without changing anything. It sends
+no prompts or answers. Check the destination, local
 origin, mode and update-slot count. The default is **interactive** with 2,048
 slots. Add `--read-only` to both commands if you want to inspect chats without
 sending, approving or creating anything.
 
+For machine-readable output, use `node scripts/setup.mjs --json --addon-dir "$WOW_ADDONS"`.
+It exits nonzero when a required check fails. The JSON includes each check's status,
+a suggested fix and the exact installer arguments. Check your game build manually;
+setup does not infer a compatible client from a directory name.
+
 ## 5. Install
 
 ```bash
-node scripts/install.mjs --addon-dir "$WOW_ADDONS" --install --service
+npm run setup -- --addon-dir "$WOW_ADDONS" --install
 systemctl --user status roamgate-wow.service
 npm run doctor
 ```
@@ -111,7 +120,9 @@ npm run doctor
 The installer writes only its owned addon/update directories, this checkout's
 `.local-data`, and `~/.config/systemd/user/roamgate-wow.service`. It backs up an
 owned addon before updating, preserves existing update data, and refuses addon
-or service directories owned by another checkout. It never restarts Herdr or
+or service directories owned by another checkout. Each install also freezes a
+matching companion/addon version with dependencies and hashes under
+`.local-data/installations`; the service runs that version. It never restarts Herdr or
 Roamgate or changes their model settings. Agent/model choices apply only when
 you deliberately create a new conversation.
 
@@ -124,7 +135,7 @@ systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE 
 systemctl --user restart roamgate-wow.service
 ```
 
-For a **foreground companion**, omit `--service` from both installer commands
+For a **foreground companion**, add `--foreground` to both setup commands
 and run `npm start` in a terminal. Keep that terminal open; Ctrl+C stops the
 companion. Do not run it alongside the user service. Systemd is unnecessary for
 foreground runtime, though the full development checks use its unit parser.
@@ -153,19 +164,26 @@ doctor run alone does not prove the in-game signal or message round trip.
 
 ## Updates
 
-Wait for any pending delivery to finish. Update the same checkout, then:
+Wait for pending delivery to finish. Stop a foreground companion with Ctrl+C
+before installing; a managed service is stopped/restarted by the installer.
+Update the same project folder. For a Git clone:
 
 ```bash
 git pull --ff-only
 npm ci --ignore-scripts
-npm run check
-node scripts/install.mjs --service
-node scripts/install.mjs --install --service
+npm run setup
+npm run setup -- --install
 ```
+
+For release archives, extract the next verified archive to a temporary folder,
+then copy its shipped files over the existing project folder. Retain `.local-data`;
+never replace it with another installation's records. Run setup from the original
+folder. If using foreground mode, retain `--foreground` on both commands.
 
 Saved addon path, slot count, local origin and mode are preserved unless you
 explicitly override them. To leave read-only mode, add `--interactive` to the
 plan and install commands. Review unexpected changes before installing.
+Editing/pulling source alone does not update a versioned runtime; install it.
 
 - Ordinary source/UI update with unchanged slots: **`/reload` out of combat**.
 - First install or changed slot count (`--slots N`, 16–4096): **full WoW relaunch**.
@@ -175,23 +193,50 @@ plan and install commands. Review unexpected changes before installing.
 Do not move the checkout without migrating its owner marker and service path.
 See [troubleshooting](TROUBLESHOOTING.md) rather than deleting ownership checks.
 
-## Stop or remove
+## Rollback
+
+Versioned installs from 0.4 onward retain a complete companion/addon pair:
 
 ```bash
-systemctl --user disable --now roamgate-wow.service
+npm run rollback -- --list
+npm run rollback -- --to INSTALLATION_ID
+npm run rollback -- --to INSTALLATION_ID --apply
 ```
 
-Disable Roamgate and its update addons in the game. To remove the files, first
-confirm the installed `Roamgate/.roamgate-wow-owner.json` points to this checkout.
-Remove only that owned `Roamgate` directory and the `RoamgateData0001` through
-the recorded final slot directory. Remove only this addon's user service file,
-then run `systemctl --user daemon-reload`. Leave Herdr and Roamgate alone.
+Review the plan first. Applying it verifies all snapshot hashes, restores that
+version's addon and runtime, and restores its slot count, path, mode, origin and
+service mode. It does not revert your source checkout or change provider settings.
+Guide history, action receipts, WoW drafts and saved variables are retained.
+Stop a foreground companion first; a managed companion is handled automatically.
+Use `/reload` for unchanged slots, or fully restart WoW if the slot count changed.
 
-Keep `.local-data/adventurer` if you want the guide bindings/saved views, and
-WoW's saved variables if you want drafts and window positions. Back these up
-privately; do not upload them. Installation backups live in
-`.local-data/backups`. Deleting the checkout deletes those local records.
+Legacy `.local-data/backups` contain addon-only copies and cannot restore a
+matching old companion. They are not offered as complete rollback targets.
+Snapshots are kept until you deliberately remove them; keep the active snapshot.
 
-For staging/build inspection only, use `npm run package`. Its `dist/AddOns`
-output is not a complete distribution: the companion and configured ownership
-are still required. Install from a source checkout using the normal installer.
+## Stop or remove
+
+To stop just the companion temporarily, use `systemctl --user stop roamgate-wow.service`
+or Ctrl+C for foreground mode. To remove this integration:
+
+```bash
+npm run uninstall
+npm run uninstall -- --apply
+```
+
+The first command prints the exact ownership/preservation plan. The second stops
+only this project's companion, removes its owned service and moves its owned addon
+folders into a private `.roamgate-recovery-*` directory beside `AddOns`.
+Unexpected files, symlinks or foreign ownership cause a refusal. If removal fails,
+it attempts to restore the moved files and prior service state.
+
+Exit/relaunch WoW after removal. Keep the project folder and WoW saved variables
+if you want drafts, guide history, model choices and window positions. Herdr and
+Roamgate, including their actual agent chats, remain untouched. The uninstall
+receipt is in `.local-data/uninstall-receipt.json`; recovery folders may contain
+private conversation views and must not be published. They are retained on disk
+until you deliberately delete them.
+
+To reinstall, use setup in the same project folder, or select a verified rollback
+target. Do not delete journals to retry an uncertain message; inspect its actual
+target first. Model menus and customization are documented in [MODELS.md](MODELS.md).

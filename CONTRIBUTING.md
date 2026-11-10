@@ -18,10 +18,11 @@ required. The tests use fake adapters, temporary directories and native Lua
 stubs. A host-managed runner such as `dev-session` is optional unless required
 by your workstation instructions. Do not install a live companion just to run CI.
 
-`npm run check` runs Node tests, the Lua contract harness and public-file/link
-checks. GitHub Actions runs the same checks on Node 22 and 24. The systemd test
-validates a unit file without starting a service. `npm run package` stages the
-bundled addon and update slots under ignored `dist/` for inspection.
+`npm run check` validates versions, Node tests, the Lua contract harness and
+public-file/link checks. GitHub Actions is configured for Node 22 and 24. The
+systemd test validates a unit file without starting a service. `npm run package`
+builds a complete distributable archive; `npm run stage:addon` stages just the
+addon and update slots under ignored `dist/` for inspection. Neither deploys it.
 
 ## Changes and review
 
@@ -36,10 +37,14 @@ bundled addon and update slots under ignored `dist/` for inspection.
   physical-pixel changes need native-client evidence, using synthetic/redacted
   content before screenshots are shared.
 
-The default alpha model menu is in `bridge/models.mjs`; the Lua fallback menu is
-in `addon/Roamgate/Models.lua`. Changes must reflect real CLI identifiers/aliases,
-not assumed account entitlements. Keep Installed default available. Future
-catalog discovery should preserve the new-chat-only boundary.
+Model discovery is in `bridge/models.mjs`; the Lua fallback menu is in
+`addon/Roamgate/Models.lua`. Keep Installed default available and preserve saved
+choices. Catalog entries are hints, not proof of account entitlement.
+See [local model configuration](docs/MODELS.md).
+
+`package.json` is the version source. After changing it, run `npm run version:sync`
+to update the lockfile and addon metadata. Checks reject mismatched versions.
+The release process and archive verification are in [RELEASING.md](docs/RELEASING.md).
 
 ## Preparing a public release
 
@@ -47,7 +52,8 @@ catalog discovery should preserve the new-chat-only boundary.
 2. Review current files and git history for private material. The checker catches
    selected credential patterns, private/generated paths and broken local links;
    it is not a complete secret or personal-data audit.
-3. Rehearse `npm ci --ignore-scripts`, tests and staging from a clean source copy.
+3. Build and verify the complete release, then rehearse its installation into a
+   temporary game tree. Check Node 22 and 24 and the rollback/removal paths.
 4. Keep `.local-data`, logs, game snapshots and real chat screenshots out of commits
    and release archives. Distribute source, not a copy of the installed addon
    directory containing published runtime data.

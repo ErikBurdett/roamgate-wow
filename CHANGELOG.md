@@ -3,7 +3,20 @@
 This project is alpha software. Entries describe implemented behavior; see
 [verification notes](docs/verification.md) for the limits of test evidence.
 
-## Unreleased — public alpha preparation
+## 0.4.0-alpha.1 — 2026-11-10
+
+- Complete versioned release bundles with locked runtime dependencies, licenses,
+  per-file hashes and an external SHA-256 checksum.
+- Setup preflight with human/JSON output and optional install; normal users do not
+  need Lua or development tools.
+- Versioned companion/addon snapshots, verified rollback, and owned uninstall
+  with private recovery copies; retain drafts, guide history and action receipts.
+- Portable new-chat model choices from a local catalog and optional overrides.
+  Fresh installs use Installed default; existing saved selections are preserved.
+- Scrollable model menus and a single version source with consistency checks.
+- Installer recovery removes obsolete addon code and preserves prior service state.
+
+### Public alpha preparation
 
 - Public README, human setup guide and agent installation playbook.
 - Usage, troubleshooting, architecture, contribution and privacy documentation.

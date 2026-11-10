@@ -75,7 +75,7 @@ function GetBindingAction(key) return bindings[key] or "" end
 function SetBinding(key,action) bindings[key]=action;return true end
 function SaveBindings() end
 function GetCurrentBindingSet() return 1 end
-RoamgateDB={drafts={}}
+RoamgateDB={drafts={},newChatModels={work={kind="codex",model="gpt-6-astra"},guide={kind="claude",model="sonnet"}}}
 C_AddOns={LoadAddOn=function() return true end}
 for _, name in ipairs({"Config","Transport","Theme","Character","Models","UI","Guide","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
 local startupCollect=RG.Character.Collect
@@ -94,7 +94,8 @@ RoamgateToggle();check(RG.UI:IsShown(),"slash/binding opens")
 RG.Transport:Tick(0.3);check(#RG.Transport.cells==640,"fixed optical strip geometry")
 RG.UI:UpdateStatus();check(not RG.UI.send.enabled,"offline actions disabled")
 local s={pane="w1:p1",terminal="t1",kind="codex",status="idle",workspace="Project",title="A title |Tbad|t",cwd="/project",proof="proof-1",entries={{role="assistant",text="Hello | world"}},screen="A terminal",historyStatus="History"}
-local data={timestamp=10000,mode="interactive",agents={s},selected=s}
+local modelChoices={{kind="codex",label="Codex",defaultModel="",models={{"","Installed default"},{"gpt-6-astra","GPT-6 Astra"}}},{kind="claude",label="Claude",defaultModel="",models={{"","Installed default"},{"sonnet","Sonnet"},{"opus","Opus"},{"fable","Fable"}}}}
+local data={timestamp=10000,mode="interactive",agents={s},selected=s,modelChoices=modelChoices}
 RG:Receive(data);RG.Transport.receivedAt=100;RG:Select(s.pane);RG.UI:UpdateStatus()
 check(RG.UI.send.enabled,"fresh view enables send")
 check(RG.UI.sessionTitle:GetText():find("||Tbad||t",1,true),"untrusted text cannot inject WoW markup")
@@ -279,7 +280,7 @@ end
 do
     RG.Transport.pending=nil;s.status="idle";s.questionMode="none";s.cached=nil;RG.selected=s.pane;RG:Receive(data)
     RG.UI.newMode=false;RG.UI.newButton.scripts.OnClick()
-    check(RG.UI.modelPicker:IsShown() and RG.UI.newKind=="codex" and RG.UI.newModel=="gpt-6-astra","new work chat defaults to Astra without changing the current session")
+    check(RG.UI.modelPicker:IsShown() and RG.UI.newKind=="codex" and RG.UI.newModel=="gpt-6-astra","upgrade preserves saved Astra selection without changing the current session")
     local picker=RG.UI.modelPicker
     picker.provider.scripts.OnClick();picker.menu.buttons[2].scripts.OnClick()
     picker.model.scripts.OnClick();picker.menu.buttons[4].scripts.OnClick()
@@ -297,7 +298,7 @@ do
     local oldPane=RG.Guide.selected
     local unsentNew=RG.Guide.saved.chats.new.draft or ""
     RG.Guide.newChat.scripts.OnClick()
-    check(RG.Guide.newKind=="claude" and RG.Guide.newModel=="sonnet" and RG.Guide.modelPicker:IsShown(),"new guide offers Claude Sonnet independently of work model choice")
+    check(RG.Guide.newKind=="claude" and RG.Guide.newModel=="sonnet" and RG.Guide.modelPicker:IsShown(),"upgrade preserves saved guide Sonnet independently of work model choice")
     check(RG.Guide.composer:GetText()==unsentNew and RG.Guide.saved.chats[oldPane].draft=="Existing guide draft","new guide restores its unsent draft and preserves the previous conversation")
     RG.Guide.composer:SetText("A new quest question");RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
     local newRequest=RG.Transport.pending
@@ -317,5 +318,11 @@ do
     RG.Guide.chatSearch:SetText("another");check(RG.Guide.chatRows[1]:IsShown() and not RG.Guide.chatRows[2]:IsShown(),"guide history search filters without deleting conversations")
     second.cached=true;second.archived=true;second.activeAgent=false;second.proof="";RG.Guide:Receive(newData)
     check(not RG.Guide.send.enabled and RG.Guide.newChat.enabled,"closed saved view is readable and can start a new chat but cannot receive input")
+end
+do
+    local old=RoamgateDB.newChatModels.work;RoamgateDB.newChatModels.work=nil
+    local ui={};RG.Models:Build(CreateFrame("Frame"),RG,ui,"work")
+    check(ui.newModel=="" and ui.newKind=="codex","new installations use provider default rather than a workstation-specific model")
+    RoamgateDB.newChatModels.work=old
 end
 print("Lua addon contract: "..checks.." checks passed")

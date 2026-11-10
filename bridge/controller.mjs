@@ -42,7 +42,7 @@ export class Controller {
       if (req.scope !== 'guide' || !this.guide || !proof || proof.type !== 'guide_start' || proof.character !== req.character || proof.nonce !== req.nonce || this.clock()-proof.at>45000) throw Error('Refresh the Grimoire before opening a new guide chat.');
       this.proofs.delete(req.proof);
       if(req.op==='guide_select')return this.guide.select(req.character,req.text,req.extra);
-      const choice=modelSelection(req.provider || 'claude',req.provider ? (req.model || '') : 'sonnet');
+      const choice=modelSelection(req.provider || 'claude',req.provider ? (req.model || '') : '',this.herdr.modelChoices);
       return this.guide.create(req.character,req.text,req.extra,choice.kind,choice.model);
     }
     if (req.op === 'guide_message' && req.scope !== 'guide') throw Error('Game questions belong in the Adventurer’s Grimoire.');
@@ -91,7 +91,7 @@ export class Controller {
       return { message: 'Message submitted to the agent.' };
     }
     if (req.op === 'new') {
-      const choice=modelSelection(req.provider || req.extra,req.model || '');
+      const choice=modelSelection(req.provider || req.extra,req.model || '',this.herdr.modelChoices);
       const cwd = agent.foreground_cwd || agent.cwd;
       if (!cwd || cwd === process.env.HOME || !cwd.startsWith('/')) throw Error('Select a session inside a project folder before starting a new chat');
       this.proofs.delete(req.proof);
@@ -112,7 +112,7 @@ export class Controller {
     const tabNames = new Map(tabs.map(t => [t.tab_id, t.label]));
     const names = new Map(workspaces.map(w => [w.workspace_id, w.label]));
     const list = agents.map(a => ({ pane: a.pane_id, terminal: a.terminal_id, kind: a.agent || 'terminal', activeAgent: !!a.agent, status: a.agent_status, workspaceId: a.workspace_id, workspace: names.get(a.workspace_id) || a.workspace_id, tab: tabNames.get(a.tab_id) || '', title: (a.agent ? (a.terminal_title_stripped || a.terminal_title || a.pane_id) : (tabNames.get(a.tab_id) || a.terminal_title || a.pane_id)).replace(/^[⠁-⣿]\s*/, ''), cwd: a.foreground_cwd || a.cwd }));
-    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, scope:req.scope || 'work', character:req.character || '', agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), modelChoices:MODEL_CHOICES, ack: this.record, slots: this.slots };
+    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, scope:req.scope || 'work', character:req.character || '', agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), modelChoices:this.herdr.modelChoices || MODEL_CHOICES, ack: this.record, slots: this.slots };
     if (req.scope==='guide' && this.guide) {
       data.guideStartProof=hash(req.nonce+':guide:'+req.character);
       this.proofs.set(data.guideStartProof,{type:'guide_start',nonce:req.nonce,character:req.character,at:this.clock()});

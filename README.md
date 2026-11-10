@@ -31,7 +31,7 @@ It requires a local companion program as well as the addon.
 | Agent host | Local Herdr and Roamgate, already configured and running |
 | Tested integration | Herdr 0.9.1 / protocol 22; Roamgate 0.8.15 |
 | Runtime | Node.js 22+, npm; systemd user services or a foreground companion |
-| Validation | Lua 5.1 and `systemd-analyze` for `npm run check` |
+| Contributor checks | Lua 5.1, Git and `systemd-analyze`; not needed for normal foreground setup |
 
 Windows, macOS, other desktop compositors, other WoW clients and remote Herdr
 machines are **not supported by this alpha's capture adapter**. Newer upstream
@@ -40,23 +40,31 @@ make those platforms supported here.
 
 ## Set it up yourself
 
-Read the [full setup guide](docs/SETUP.md) if Herdr/Roamgate are not already working.
-Once they are, clone or download this repository, open a terminal in its folder,
-and run:
+Read the [full setup guide](docs/SETUP.md). Herdr and Roamgate must already work
+on this machine. Extract the complete `roamgate-wow-VERSION.tar.gz` release into
+a permanent folder, or clone/download the source. The complete release includes
+its runtime dependency; a GitHub source ZIP or clone needs this step first:
 
 ```bash
-npm ci --ignore-scripts
-npm run check
+npm ci --omit=dev --ignore-scripts
+```
 
+Then, from the project folder:
+
+```bash
 # Replace this with the actual path in your Wine/Lutris/Bottles installation.
 WOW_ADDONS="/absolute/path/to/World of Warcraft/_forever_/Interface/AddOns"
 
-# Review the destination and settings; this command changes nothing.
-node scripts/install.mjs --addon-dir "$WOW_ADDONS" --service
+# Check prerequisites/connections and review the plan; no changes.
+npm run setup -- --addon-dir "$WOW_ADDONS"
 
-# Install and start only this addon's companion.
-node scripts/install.mjs --addon-dir "$WOW_ADDONS" --install --service
+# Install and start only this addon's companion after those checks pass.
+npm run setup -- --addon-dir "$WOW_ADDONS" --install
 ```
+
+Use `node scripts/setup.mjs --json --addon-dir "$WOW_ADDONS"` for machine-readable
+diagnostics, or add `--foreground` to both setup commands and run `npm start`
+if you prefer a terminal companion. [Contributor checks](CONTRIBUTING.md) are separate.
 
 Fully restart WoW **once after the first install** so it discovers the update
 addons. Enable **Roamgate** and all **Roamgate update** entries at character
@@ -64,7 +72,8 @@ selection. Open `/rg`, keep WoW focused, and wait for **Connected to this machin
 The [first-use checks](docs/SETUP.md#first-launch) explain how to verify delivery.
 
 Ordinary updates use `/reload`; adding/changing update slots needs a full relaunch.
-Keep the source checkout in place: the companion runs from it.
+Keep this folder in place: it holds settings, guide history and versioned runtimes.
+[Updates, rollback and uninstall](docs/SETUP.md#updates) preserve those records.
 
 ## Have your agent set it up
 
@@ -102,6 +111,8 @@ The 2,048 default update slots are refreshed by `/reload` when used up.
 
 - [Setup, updates and removal](docs/SETUP.md)
 - [Agent-assisted setup](docs/AGENT_SETUP.md)
+- [Model choices and local customization](docs/MODELS.md)
+- [Release bundles and checksums](docs/RELEASING.md)
 - [Using the two books, models, HUD and questions](docs/USAGE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Architecture and porting boundaries](docs/ARCHITECTURE.md)

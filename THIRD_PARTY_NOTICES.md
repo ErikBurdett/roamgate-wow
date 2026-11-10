@@ -5,7 +5,8 @@
   Hat copyright notices and SIL Open Font License 1.1 in
   [FONT-LICENSE.txt](addon/Roamgate/Media/FONT-LICENSE.txt). The font retains its own license.
 - **ws:** the npm dependency is MIT licensed. It is installed from the lockfile;
-  its package includes its upstream license. It is not vendored in this repo.
+  its package includes its upstream license. Complete release bundles include
+  `node_modules/ws/LICENSE`; the dependency is not committed to this repository.
 - **WoW textures and standard game fonts:** referenced by in-game resource paths
   and supplied by the installed client; not distributed in this repository.
 - **Roamgate and Herdr:** separate required upstream programs, not bundled here.

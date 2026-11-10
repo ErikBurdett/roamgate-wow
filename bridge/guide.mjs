@@ -48,8 +48,8 @@ export class GuideSessions {
     await this.bind(character,entry);
     return {pane,message:row.available ? 'Opened your guide conversation.' : 'Showing the last saved view. This chat is closed in Roamgate.'};
   }
-  async create(character, question, context, kind = 'claude', model = 'sonnet') {
-    const args=modelArgs(kind,model);
+  async create(character, question, context, kind = 'claude', model = '') {
+    const args=modelArgs(kind,model,this.herdr.modelChoices);
     const prompt=guidePrompt(question,context);
     await fs.mkdir(this.directory,{recursive:true,mode:0o700});
     await atomicWrite(path.join(this.directory,'AGENTS.md'),`# Adventurer's Grimoire\n\n${GUIDE_RULES}\n\nThis is a dedicated game-advice workspace. The player's work chats are separate.\n`);

@@ -27,3 +27,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.1
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - name: Build and verify the complete release
+        if: matrix.node == 24
+        run: |
+          npm run package
+          cd dist
+          sha256sum -c roamgate-wow-*.sha256
+          mkdir verified
+          tar -xzf roamgate-wow-*.tar.gz -C verified
+          node verified/roamgate-wow-*/scripts/verify-release.mjs

@@ -17,12 +17,16 @@ does not require a particular tracker, shell distribution or agent product.
   installed addons.
 - Keep `.local-data`, captured screens, runtime conversation snapshots and
   credentials out of git. Never print credentials in diagnostics.
-- Run `npm ci --ignore-scripts` and `npm run check`. If the workstation provides
+- For code changes, run `npm ci --ignore-scripts` and `npm run check`. If the workstation provides
   a managed test runner (such as `dev-session`), use it. Use `npm run doctor`
   for read-only live checks. Mock Lua tests do not prove in-game rendering,
   model entitlement, or physical capture.
+- For end-user setup, `node scripts/setup.mjs --json` checks prerequisites without
+  requiring Lua. Complete release bundles already contain production dependencies.
 - `node scripts/install.mjs --service` prints the plan. Add `--install` to install;
   changes outside the project need the workstation's sandbox escalation.
+- Use rollback/uninstall plans before applying recovery changes. Keep installation
+  snapshots, journals, saved variables and guide history private and intact.
 - Preserve saved install paths, slot counts, modes and ports on updates. Never
   edit existing Roamgate, Herdr, Codex or Claude settings to make a test pass.
 - First installs must use the user's actual WoW Forever Interface/AddOns path.

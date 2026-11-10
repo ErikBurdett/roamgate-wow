@@ -13,7 +13,8 @@ workstation instructions and approval requirements.
 2. Locate the actual `Interface/AddOns` directory from the user's game launcher
    or known prefix. Read before asking for information already available locally.
    Do not recursively scan the entire home directory for private content.
-3. Check Node 22+, npm, Lua 5.1, `grim`, `hyprctl` and the user service manager.
+3. Check Node 22+, npm, `grim`, `hyprctl` and the user service manager.
+   Lua 5.1 is only needed for contributor tests, not ordinary setup.
    Install missing dependencies using the host's normal package workflow only
    within the user's authorization. Never use `sudo npm install` here.
 4. Inspect `herdr --version`, `herdr agent list` and `roamgate doctor` without
@@ -26,22 +27,25 @@ workstation instructions and approval requirements.
 
 ## Validate and install
 
-From this checkout:
+From the project folder, use the complete release bundle's included dependency,
+or run `npm ci --omit=dev --ignore-scripts` for a source clone/ZIP. Verify a complete
+archive before extraction using its SHA-256 file, then `node scripts/verify-release.mjs`.
+Never substitute private installed addon files for the public source package.
 
 ```bash
-npm ci --ignore-scripts
-npm run check
-node scripts/install.mjs --help
+node scripts/setup.mjs --json --addon-dir /actual/Interface/AddOns
 ```
 
-If the workstation has a managed runner, run the checks inside it; for example,
-`dev-session run -- npm run check`. Otherwise the ordinary command is sufficient.
-Tests create/remove their own scratch directories and use fake agent adapters.
+Parse the JSON; check `ready`, the individual checks and the proposed arguments.
+Include `--origin` for an existing custom local port and `--foreground` when the
+user prefers a terminal companion. Resolve failed checks before applying that
+same setup command with `--install`. Confirm the game build manually: directory
+presence is not a compatibility test.
 
-Run the installer with the discovered absolute `--addon-dir` and `--service`,
-without `--install`, to inspect the plan. Include `--origin` only if the user's
-existing Roamgate uses a different local port. Check the destination, mode,
-slot count and ownership before applying that same plan with `--install`.
+When changing code or preparing releases, run `npm run check` with the development
+tools installed. Use a host-managed runner when provided. Tests use fake adapters
+and temporary directories; never substitute a real agent for a fixture.
+
 Installation may require the host sandbox's approval to write outside the repo.
 Explain that actual requirement if approval is needed; do not invent a second
 approval step when the user already authorized installation.
@@ -54,6 +58,12 @@ the original checkout, not an unreviewed recursive deletion.
 Only `roamgate-wow.service` may be restarted by this workflow. Do not restart
 Herdr/Roamgate, change provider settings, install global keybindings, or open
 network ports. Use the documented foreground mode if the user chooses it.
+
+Recovery uses `npm run rollback -- --list` / `--to ID` or `npm run uninstall`.
+Review their plans before using `--apply`. Retain the journal, guide records and
+saved variables; keep snapshot/recovery folders private. Snapshot rollback begins
+with 0.4 installs, not legacy addon-only backups. Do not apply recovery to test it
+against the user's live installation; use temporary fixtures.
 
 ## Verify without sending work
 

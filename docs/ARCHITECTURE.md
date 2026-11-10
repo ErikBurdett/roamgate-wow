@@ -16,10 +16,13 @@ Roamgate/Herdr sessions. No server endpoint is opened by the companion.
 | `bridge/controller.mjs` | Target proofs, at-most-once journal, snapshots and read caches |
 | `bridge/herdr.mjs`, `roamgate.mjs` | Literal CLI arguments and local authenticated RPC |
 | `bridge/guide.mjs` | Character/workspace bindings, guide history and saved views |
-| `bridge/models.mjs` | Explicit supported new-chat model IDs/aliases; no provider-settings writes |
+| `bridge/models.mjs` | Local catalog discovery, validated overrides; no provider-settings writes |
 | `bridge/config.mjs` | Saved install config and local-origin validation |
 | `scripts/install.mjs`, `options.mjs`, `unit.mjs` | Installer planning/preflight, updates, optional user service |
 | `scripts/bundle.mjs` | Combine UI modules into the already-discovered `UI.lua` entry point |
+| `scripts/setup.mjs`, `preflight.mjs` | Read-only dependency/connection checks, JSON diagnostics, optional install |
+| `scripts/install-state.mjs`, `lifecycle.mjs` | Owned snapshots, integrity checks, rollback and uninstall recovery |
+| `scripts/release.mjs`, `version.mjs` | Complete allowlisted archives, dependency lock, version consistency |
 
 ## Round trip
 
@@ -56,6 +59,27 @@ can discover other panes in those guide workspaces, never an arbitrary work pane
 or another character's workspace. Closed chats can display a saved local view,
 without input authorization. Drafts/window state live in WoW saved variables;
 bindings, journal and saved views live under ignored `.local-data`.
+
+## Installation lifecycle
+
+New installs freeze companion code, addon sources and locked production dependencies
+under `.local-data/installations/ID/source`, with a SHA-256 manifest and install
+configuration. The service points to that runtime; `npm start` verifies and selects
+the recorded runtime. `ROAMGATE_WOW_ROOT` keeps configuration, model overrides,
+receipts and guide history in the original project folder. Editing the checkout
+alone does not update a versioned installation; run the installer.
+
+Rollback verifies snapshot ownership and all file hashes before restoring the
+companion/addon pair and prior configuration. It preserves published data, drafts,
+journal and guide history. Ownership records retain the maximum managed slot count
+so shrinking the active pool does not orphan old update folders during removal.
+Legacy addon-only backups cannot provide a complete runtime rollback.
+
+Uninstall checks ownership and tree contents, stops only its own companion and
+renames owned addon directories into a private recovery directory on the same
+filesystem. If an operation fails, it attempts to restore moved files and service
+state. No other agent service is stopped. Snapshots and recovery copies accumulate
+locally; they are deliberately not purged automatically.
 
 ## Porting
 

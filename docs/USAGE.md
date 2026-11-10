@@ -40,10 +40,11 @@
   finish answering; it never silently pastes a work task into an answer field.
 - **New chat** starts a chosen Codex, Claude, Hermes or OpenCode agent in the selected
   session's project and workspace. Choose the provider and model in the **New chat**
-  row, write the first task, and press **Start chat**. Codex offers Astra, Sol,
-  Terra and Luna; Claude offers Sonnet, Haiku, Opus and Fable. **Installed default**
-  omits the model override. Hermes/OpenCode currently use their installed defaults.
-  Work chats initially offer Codex/Astra, or Fable when first switching to Claude;
+  row, write the first task, and press **Start chat**. Codex choices come from its
+  local model catalog. Claude includes its standard aliases; extra IDs can be
+  configured locally. **Installed default** omits the model override.
+  Hermes/OpenCode currently use their installed defaults.
+  New users start with Codex / Installed default; upgrades retain saved selections;
   each book remembers its own last choice for each provider
   in the addon's saved variables. These choices apply only to new conversations.
   Existing chats, Roamgate settings, provider configuration and effort defaults
@@ -82,7 +83,7 @@ they do not send it automatically. The right page has **Live reply**,
 **Conversation**, **Questions**, and a **Context** preview.
 
 **Open guide & ask** starts a chat in a dedicated **WoW Adventures** workspace
-through Herdr, preserving desktop focus. The initial choice is **Claude / Sonnet**,
+through Herdr, preserving desktop focus. New users start with **Claude / Installed default**,
 with a provider/model selector above the composer. **New conversation** reveals
 the selector again and keeps a separate first-question draft. **Cancel new**
 returns to the existing chat. Follow-ups stay with the selected conversation;
@@ -103,8 +104,9 @@ Model flags are passed to the new process through Herdr's argument passthrough,
 never through `/model` or a settings edit. See the
 [Claude model configuration](https://code.claude.com/docs/en/model-config) and
 [Codex command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
-Sonnet is the guide's practical starting choice; choose a different model for
-your own needs before opening a new conversation.
+Choose a model before opening a new conversation, or use the provider's installed
+default. Existing Sonnet, Astra, Fable or other saved selections remain intact.
+See [model discovery and customization](MODELS.md) for available choices and limits.
 
 Each submitted game question can include a fresh snapshot: character identity,
 level/class/race/faction, zone and available map position, health and attributes,

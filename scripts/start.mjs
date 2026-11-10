@@ -1,0 +1,10 @@
+import path from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {readConfig} from '../bridge/config.mjs';
+import {readSnapshot,runtimeEntry} from './install-state.mjs';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const config=await readConfig(root);
+if(config.installation)await readSnapshot(root,config.installation);
+const entry=config.installation ? runtimeEntry(root,config.installation) : path.join(root,'bridge/main.mjs');
+process.env.ROAMGATE_WOW_ROOT=root;process.argv[2]='run';
+await import(pathToFileURL(entry));

@@ -42,8 +42,11 @@ Do not upload `WTF`, SavedVariables, `.local-data`, or whole service logs.
 
 ## Recovery boundaries
 
-The installer saves addon backups in `.local-data/backups`. Keep the current
-checkout, journal and guide registry together. If an action was recorded as
+The installer saves addon backups in `.local-data/backups` and complete versioned
+runtimes in `.local-data/installations`. Use the [rollback plan](SETUP.md#rollback)
+before restoring a matching companion/addon pair. Uninstall keeps its recovery
+files beside AddOns; these contain private views and must not be published.
+Keep the current checkout, journal and guide registry together. If an action was recorded as
 uncertain, neither restarting nor changing the nonce is proof it was not sent.
 Inspect the actual target first. Do not delete `actions.json` to force retries.
 
