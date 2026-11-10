@@ -19,16 +19,18 @@ export function parseFields(body) {
     if (end < p || end - p > 5 || !/^\d+$/.test(body.subarray(p, end).toString())) throw Error('Invalid field');
     const len = Number(body.subarray(p, end).toString());
     p = end + 1;
-    if (p + len > body.length || result.length > 12) throw Error('Invalid field length');
+    if (p + len > body.length || result.length >= 14) throw Error('Invalid field length');
     const bytes = body.subarray(p, p + len), value = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     result.push(value); p += len;
   }
-  if (result.length !== 10 && result.length !== 12) throw Error('Invalid command fields');
-  const [nonce, slot, id, op, pane, terminal, proof, text, extra, visible, scope = 'work', character = ''] = result;
+  if (![10,12,14].includes(result.length)) throw Error('Invalid command fields');
+  const [nonce, slot, id, op, pane, terminal, proof, text, extra, visible, scope = 'work', character = '', provider = '', model = ''] = result;
   if (!/^[a-f0-9]{16}$/.test(nonce) || !/^\d{1,6}$/.test(slot) || !/^\d{1,9}$/.test(id)) throw Error('Invalid command identity');
-  if (!['view', 'message', 'key', 'answer', 'stop', 'new', 'guide_new', 'guide_message'].includes(op)) throw Error('Unknown command');
+  if (!['view', 'message', 'key', 'answer', 'stop', 'new', 'guide_new', 'guide_message', 'guide_select'].includes(op)) throw Error('Unknown command');
   if (!['work','guide'].includes(scope) || (scope==='guide' && (!/^(Player-[A-Za-z0-9-]+|name:[^\x00-\x1f]{1,150})$/.test(character) || Buffer.byteLength(character)>200))) throw Error('Invalid conversation surface');
-  return { nonce, slot: Number(slot), id: Number(id), op, pane, terminal, proof, text, extra, visible: visible === '1', scope, character };
+  if (!/^[a-z]{0,20}$/.test(provider) || !/^[a-zA-Z0-9._-]{0,100}$/.test(model)) throw Error('Invalid model selection');
+  if ((provider || model) && !['new','guide_new'].includes(op)) throw Error('Model choices apply only to new chats');
+  return { nonce, slot: Number(slot), id: Number(id), op, pane, terminal, proof, text, extra, visible: visible === '1', scope, character, provider, model };
 }
 export function encodeFrame(body, part, serial = 1) {
   const count = Math.ceil(body.length / CHUNK), data = body.subarray(part * CHUNK, (part + 1) * CHUNK);

@@ -106,6 +106,14 @@ test('new sessions use selected project and chosen provider',async t=>{
 test('new nonce requires a view handshake, never an action',async t=>{
   const f=await fixture(t);await assert.rejects(f.controller.handle({...f.command,nonce:'fedcba9876543210'}),/fresh connection/);assert.equal(f.calls.length,0);
 });
+test('explicit new-chat model reaches only the creation adapter and invalid choices cannot create',async t=>{
+  const f=await fixture(t);
+  const result=await f.controller.handle({...f.command,op:'new',extra:'claude',provider:'claude',model:'fable'});
+  assert.equal(result.ack.state,'ok');assert.equal(f.calls[0][3],'claude');assert.equal(f.calls[0][4],'fable');
+  const fresh=await f.controller.handle(f.view);
+  const invalid=await f.controller.handle({...f.command,id:2,op:'new',proof:fresh.selected.proof,provider:'codex',model:'fable'});
+  assert.equal(invalid.ack.state,'error');assert.equal(f.calls.length,1);
+});
 test('history failure retains exact terminal output with explicit fallback',async t=>{
   const f=await fixture(t);f.controller.historyCache.clear();f.opts.roamgate.history=async()=>{throw Error('offline');};
   await f.controller.handle(f.view);await new Promise(r=>setImmediate(r));

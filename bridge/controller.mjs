@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { atomicWrite } from './files.mjs';
 import { guidePrompt } from './guide.mjs';
 import { questionMode, followupQuestion } from './questions.mjs';
+import { MODEL_CHOICES, modelSelection } from './models.mjs';
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const identity = a => JSON.stringify([a.pane_id, a.terminal_id, a.agent, a.agent_session || null, a.cwd]);
 const visibleHash = text => hash(text.trimEnd());
@@ -37,9 +38,12 @@ export class Controller {
   async act(req) {
     if (this.mode !== 'interactive') throw Error('The companion is in read-only mode');
     const proof = this.proofs.get(req.proof);
-    if (req.op === 'guide_new') {
+    if (req.op === 'guide_new' || req.op === 'guide_select') {
       if (req.scope !== 'guide' || !this.guide || !proof || proof.type !== 'guide_start' || proof.character !== req.character || proof.nonce !== req.nonce || this.clock()-proof.at>45000) throw Error('Refresh the Grimoire before opening a new guide chat.');
-      this.proofs.delete(req.proof); return this.guide.create(req.character,req.text,req.extra);
+      this.proofs.delete(req.proof);
+      if(req.op==='guide_select')return this.guide.select(req.character,req.text,req.extra);
+      const choice=modelSelection(req.provider || 'claude',req.provider ? (req.model || '') : 'sonnet');
+      return this.guide.create(req.character,req.text,req.extra,choice.kind,choice.model);
     }
     if (req.op === 'guide_message' && req.scope !== 'guide') throw Error('Game questions belong in the Adventurer’s Grimoire.');
     if (req.scope === 'guide') {
@@ -87,12 +91,12 @@ export class Controller {
       return { message: 'Message submitted to the agent.' };
     }
     if (req.op === 'new') {
-      if (!['codex', 'claude', 'hermes', 'opencode'].includes(req.extra)) throw Error('Choose a supported agent');
+      const choice=modelSelection(req.provider || req.extra,req.model || '');
       const cwd = agent.foreground_cwd || agent.cwd;
       if (!cwd || cwd === process.env.HOME || !cwd.startsWith('/')) throw Error('Select a session inside a project folder before starting a new chat');
       this.proofs.delete(req.proof);
-      const pane = await this.herdr.newChat(agent, req.text, req.extra);
-      return { pane, message: `Started ${req.extra} in ${pane}.` };
+      const pane = await this.herdr.newChat(agent, req.text, choice.kind,choice.model);
+      return { pane, message: `Started ${choice.kind}${choice.model ? ' / '+choice.model : ''} in ${pane}.` };
     }
     throw Error('Unsupported action');
   }
@@ -108,13 +112,20 @@ export class Controller {
     const tabNames = new Map(tabs.map(t => [t.tab_id, t.label]));
     const names = new Map(workspaces.map(w => [w.workspace_id, w.label]));
     const list = agents.map(a => ({ pane: a.pane_id, terminal: a.terminal_id, kind: a.agent || 'terminal', activeAgent: !!a.agent, status: a.agent_status, workspaceId: a.workspace_id, workspace: names.get(a.workspace_id) || a.workspace_id, tab: tabNames.get(a.tab_id) || '', title: (a.agent ? (a.terminal_title_stripped || a.terminal_title || a.pane_id) : (tabNames.get(a.tab_id) || a.terminal_title || a.pane_id)).replace(/^[⠁-⣿]\s*/, ''), cwd: a.foreground_cwd || a.cwd }));
-    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, scope:req.scope || 'work', character:req.character || '', agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), ack: this.record, slots: this.slots };
+    const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, scope:req.scope || 'work', character:req.character || '', agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), modelChoices:MODEL_CHOICES, ack: this.record, slots: this.slots };
     if (req.scope==='guide' && this.guide) {
       data.guideStartProof=hash(req.nonce+':guide:'+req.character);
       this.proofs.set(data.guideStartProof,{type:'guide_start',nonce:req.nonce,character:req.character,at:this.clock()});
+      data.guideChats=this.guide.conversations?.(req.character,list) || [];
     }
     const selected = agents.find(a => a.pane_id === req.pane && (!guideBinding || a.terminal_id === guideBinding.terminal));
-    if (req.scope==='guide') data.guidePane=selected?.pane_id || '';
+    if (req.scope==='guide') {
+      data.guidePane=guideBinding?.pane || '';
+      if(!selected && guideBinding && req.visible) {
+        const archive=await this.guide.archived?.(guideBinding);
+        if(archive)data.selected={...archive,cached:true,archived:true,activeAgent:false,proof:'',status:'closed',historyStatus:'Last saved view; chat closed in Roamgate.'};
+      }
+    }
     if (!selected || !req.visible) return data;
     const selectedIdentity = identity(selected);
     let captured = this.screens.get(req.pane);
@@ -154,6 +165,12 @@ export class Controller {
     this.proofs.set(proofKey, proof);
     for (const [key, value] of this.proofs) if (this.clock() - value.at > 45000) this.proofs.delete(key);
     data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, questionScreen:followup || screen, questionMode:questionMode(selected,screen), transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
+    if(req.scope==='guide') {
+      data.selected.model=guideBinding?.model || '';
+      // A local saved view remains readable if the desktop pane is later closed.
+      // Failure to save must not suppress a delivery receipt.
+      try {await this.guide.remember?.(req.character,data.selected);}catch {data.historySaveError=true;}
+    }
     if (req.op === 'view' && (['files', 'file', 'changes'].includes(req.text) || req.text?.startsWith('diff:'))) {
       const key = JSON.stringify([selected.workspace_id, req.text, req.extra]);
       const cached = this.browserCache.get(key);

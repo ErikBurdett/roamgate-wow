@@ -77,7 +77,7 @@ function SaveBindings() end
 function GetCurrentBindingSet() return 1 end
 RoamgateDB={drafts={}}
 C_AddOns={LoadAddOn=function() return true end}
-for _, name in ipairs({"Config","Transport","Theme","Character","UI","Guide","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
+for _, name in ipairs({"Config","Transport","Theme","Character","Models","UI","Guide","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
 local startupCollect=RG.Character.Collect
 RG.Character.Collect=function()error("Character startup API failure")end
 local login=all[#all];login.scripts.OnEvent(login,"PLAYER_LOGIN")
@@ -275,5 +275,47 @@ do
     toggleWindows();RoamgateMinimap.scripts.OnClick();toggleWindows();toggleWindows()
     check(RG.UI:IsShown() and not RG.Guide:IsShown() and RG.activeSurface=="work","work minimap remains independent and work-only Alt+R restoration works")
     RG.UI.hudCollapse.scripts.OnClick();check(not RG.UI.hudGuide:IsShown(),"collapsed HUD hides its guide button")
+end
+do
+    RG.Transport.pending=nil;s.status="idle";s.questionMode="none";s.cached=nil;RG.selected=s.pane;RG:Receive(data)
+    RG.UI.newMode=false;RG.UI.newButton.scripts.OnClick()
+    check(RG.UI.modelPicker:IsShown() and RG.UI.newKind=="codex" and RG.UI.newModel=="gpt-6-astra","new work chat defaults to Astra without changing the current session")
+    local picker=RG.UI.modelPicker
+    picker.provider.scripts.OnClick();picker.menu.buttons[2].scripts.OnClick()
+    picker.model.scripts.OnClick();picker.menu.buttons[4].scripts.OnClick()
+    check(RG.UI.newKind=="claude" and RG.UI.newModel=="fable" and not RG.Transport.pending,"choosing Claude/Fable is local and creates no chat until Send")
+    RG.UI.composer:SetText("A new coding task");RG.UI:SendMessage()
+    local sent=RG.Transport.pending
+    check(sent.op=="new" and sent.provider=="claude" and sent.model=="fable" and sent.pane==s.pane,"new work chat freezes provider and model with the target project")
+    picker.saved.model="sonnet";RG.Models:Refresh(RG.UI,RG)
+    check(RG.Transport.pending.model=="fable" and not picker.model.enabled,"an in-flight model choice is immutable")
+    RG.UI:ActionResult(sent,{state="error",message="Test failure"});RG.Transport.pending=nil;RG.UI.newButton.scripts.OnClick()
+    check(s.kind=="codex" and not picker:IsShown(),"cancel new chat leaves the existing Codex conversation alone")
+
+    gs.status="idle";gs.questionMode="none";gs.cached=nil;RG.Guide:Receive(guideData);RG.Guide:Open();RG.Guide:Navigate("terminal")
+    RG.Guide.includeContext=false;RG.Guide.composer:SetText("Existing guide draft")
+    local oldPane=RG.Guide.selected
+    local unsentNew=RG.Guide.saved.chats.new.draft or ""
+    RG.Guide.newChat.scripts.OnClick()
+    check(RG.Guide.newKind=="claude" and RG.Guide.newModel=="sonnet" and RG.Guide.modelPicker:IsShown(),"new guide offers Claude Sonnet independently of work model choice")
+    check(RG.Guide.composer:GetText()==unsentNew and RG.Guide.saved.chats[oldPane].draft=="Existing guide draft","new guide restores its unsent draft and preserves the previous conversation")
+    RG.Guide.composer:SetText("A new quest question");RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
+    local newRequest=RG.Transport.pending
+    check(newRequest.op=="guide_new" and newRequest.provider=="claude" and newRequest.model=="sonnet" and newRequest.extra=="","guide Enter sends selected model without changing or overwriting context")
+    local second={pane="wG:p9",terminal="t9",kind="claude",status="idle",activeAgent=true,title="Another quest",workspace="WoW Adventures",proof="guide-proof-9",screen="Quest advice",entries={}}
+    RG.Guide:ActionResult(newRequest,{state="ok",pane=second.pane,message="Opened"});RG.Transport.pending=nil
+    local newData={timestamp=10000,mode="interactive",scope="guide",character="Player-1-abc123",guideStartProof="guide-start",guidePane=second.pane,selected=second,guideChats={gs,second}}
+    RG.Guide:Receive(newData);RG.Guide.composer:SetText("Second conversation draft");RG.Guide:ShowSidebar("chats")
+    check(RG.Guide.chatPage:IsShown() and not RG.Guide.characterPage:IsShown() and RG.Guide.chatRows[2]:IsShown(),"Chats sidebar lists the guide workspace conversations separately from quests")
+    RG.Guide.chatRows[1].scripts.OnClick()
+    local selection=RG.Transport.pending
+    check(selection.op=="guide_select" and selection.text==oldPane and selection.extra==gs.terminal and not selection.provider,"clicking history selects the exact pane/terminal without a model change or prompt")
+    RG.Guide:SelectChat(second);check(RG.Transport.pending==selection,"history cannot switch targets while an action is in flight")
+    RG.Guide:ActionResult(selection,{state="ok",pane=oldPane,message="Opened"});RG.Transport.pending=nil
+    guideData.guideChats={gs,second};RG.Guide:Receive(guideData)
+    check(RG.Guide.composer:GetText()=="Existing guide draft" and RG.Guide.saved.chats[second.pane].draft=="Second conversation draft","switching conversations restores the correct saved draft")
+    RG.Guide.chatSearch:SetText("another");check(RG.Guide.chatRows[1]:IsShown() and not RG.Guide.chatRows[2]:IsShown(),"guide history search filters without deleting conversations")
+    second.cached=true;second.archived=true;second.activeAgent=false;second.proof="";RG.Guide:Receive(newData)
+    check(not RG.Guide.send.enabled and RG.Guide.newChat.enabled,"closed saved view is readable and can start a new chat but cannot receive input")
 end
 print("Lua addon contract: "..checks.." checks passed")

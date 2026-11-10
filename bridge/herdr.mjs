@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { modelArgs } from './models.mjs';
 const exec = promisify(execFile);
 export class Herdr {
   async command(args, { text = false, timeout = 12000 } = {}) {
@@ -30,11 +31,12 @@ export class Herdr {
     // separate deliberate operation in the UI, never an automatic approval.
     return this.command(['pane', 'send-text', pane, text]);
   }
-  async newChat(agent, text, kind) {
+  async newChat(agent, text, kind, model = '') {
+    const args = modelArgs(kind, model); // Validate before creating anything.
     const made = await this.command(['tab', 'create', '--workspace', agent.workspace_id, '--cwd', agent.foreground_cwd || agent.cwd, '--label', 'From Azeroth', '--no-focus']);
     const pane = made.root_pane.pane_id;
     try {
-      await this.command(['agent', 'start', `wow-${Date.now().toString(36)}`, '--kind', kind, '--pane', pane], { timeout: 40000 });
+      await this.command(['agent', 'start', `wow-${Date.now().toString(36)}`, '--kind', kind, '--pane', pane, ...args], { timeout: 40000 });
       await this.prompt(pane, text);
     } catch { throw Error(`Created ${pane}, but startup or delivery was not confirmed. Inspect that pane in Roamgate before retrying.`); }
     return pane;

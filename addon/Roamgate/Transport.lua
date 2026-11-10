@@ -26,7 +26,7 @@ function T:Packet()
     local ui = owner.UI
     return fields({ self.nonce, self.slot, p.id or 0, p.op or "view", p.pane or owner.selected or "",
         p.terminal or "", p.proof or "", p.text or ui.view or "terminal", p.extra or owner.browsePath or "", ui:IsShown() and "1" or "0",
-        owner == RG and "work" or "guide", owner == RG and "" or owner:CharacterKey() })
+        owner == RG and "work" or "guide", owner == RG and "" or owner:CharacterKey(), p.provider or "", p.model or "" })
 end
 function T:Frame(body, part, serial)
     local count = math.ceil(#body / CHUNK)
@@ -50,15 +50,16 @@ function T:Send(op, text, extra, owner)
     local ui, data = owner.UI, owner.data
     if self.pending then ui:SetNotice("Waiting for the companion to acknowledge the last action."); return false end
     local s = data and data.selected
-    local starting = owner == RG.Guide and op == "guide_new" and data and data.guideStartProof
+    local starting = owner == RG.Guide and (op == "guide_new" or op == "guide_select") and data and data.guideStartProof
     if not self:IsFresh(data) or (not starting and (not s or s.pane ~= owner.selected or not s.proof or s.cached)) then ui:SetNotice("Wait for a fresh view of this session before sending."); self:RefreshSoon(); return false end
     if data.mode ~= "interactive" then ui:SetNotice("The companion is in read-only mode."); return false end
     if #text > 6000 or #(extra or "") > 5000 then ui:SetNotice("Message or context is too long."); return false end
     self.sequence = self.sequence + 1
     self.pending = { id = self.sequence, op = op, text = text, extra = extra or "", pane = starting and "" or s.pane, terminal = starting and "" or s.terminal, proof = starting or s.proof, scope = owner == RG and "work" or "guide" }
+    if op=="new" or op=="guide_new" then self.pending.provider=ui.newKind;self.pending.model=ui.newModel or "" end
     self.part, self.body, self.pendingAt = 0, nil, GetTime()
     self:RefreshSoon()
-    ui:SetNotice(starting and "Opening your guide chat..." or ("Sending to " .. s.workspace .. " / " .. s.kind .. "..."))
+    ui:SetNotice(starting and (op=="guide_select" and "Opening guide conversation..." or "Opening your guide chat...") or ("Sending to " .. s.workspace .. " / " .. s.kind .. "..."))
     ui:UpdateStatus()
     return true
 end

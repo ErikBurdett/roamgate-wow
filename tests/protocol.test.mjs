@@ -15,6 +15,15 @@ test('Lua and JS generate byte-identical optical frames', () => {
   const actual = execFileSync('lua5.1', ['tests/wire.lua']);
   assert.deepEqual(actual, encodeFrame(packet(), 0, 1));
 });
+test('new model fields survive the optical protocol without replacing guide context',()=>{
+  const values=['0123456789abcdef',1,2,'guide_new','','','proof','Where next?','Level 27; Duskwood',1,'guide','Player-1-abc','claude','sonnet'];
+  const result=new Assembler().accept(encodeFrame(fields(values),0));
+  assert.equal(result.provider,'claude');assert.equal(result.model,'sonnet');assert.equal(result.extra,'Level 27; Duskwood');
+  assert.throws(()=>parseFields(fields(values.map((v,i)=>i===3?'guide_message':v))),/only to new/);
+  assert.throws(()=>parseFields(fields(values.map((v,i)=>i===13?'sonnet --evil':v))),/model selection/);
+  const select=values.map((v,i)=>i===3?'guide_select':i===7?'wG:p1':i===8?'term':i>11?'':v);
+  assert.equal(parseFields(fields(select)).op,'guide_select');
+});
 test('fragment reassembly handles order, repetitions, and UTF-8 split boundaries', () => {
   const body = packet('你好🌍\n'.repeat(390)); const a = new Assembler(), frames = [];
   for (let i = 0; i < Math.ceil(body.length / 600); i++) frames.push(encodeFrame(body, i));

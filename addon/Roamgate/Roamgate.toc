@@ -2,7 +2,7 @@
 ## Title: |cffd8b76aRoamgate|r
 ## Notes: Your local workspaces, conversations and agent questions in Azeroth.
 ## Author: Erik Burdett
-## Version: 0.2.0
+## Version: 0.3.0
 ## SavedVariables: RoamgateDB
 Config.lua
 Transport.lua

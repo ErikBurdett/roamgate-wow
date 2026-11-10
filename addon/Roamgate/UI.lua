@@ -192,16 +192,10 @@ function U:Build()
     end)
     self.newButton = button(main, "New chat", 95, function()
         self.newMode = not self.newMode
-        self.newKind = (RG.data and RG.data.selected and RG.data.selected.kind) or "codex"
-        if not ({codex=true,claude=true,hermes=true,opencode=true})[self.newKind] then self.newKind = "codex" end
         if self.newMode then self:SetNotice("Write the first task below. The new chat will use the selected project folder.") end
         self:Refresh(); self.composer:SetFocus()
     end); self.newButton:SetPoint("BOTTOMLEFT", 0, 9)
-    self.kindButton = button(main, "codex", 95, function()
-        local kinds = {"codex", "claude", "hermes", "opencode"}
-        for i, k in ipairs(kinds) do if k == self.newKind then self.newKind = kinds[i % #kinds + 1]; break end end
-        self.kindButton:SetText(self.newKind); self:Refresh()
-    end); self.kindButton:SetPoint("LEFT", self.newButton, "RIGHT", 8, 0); self.kindButton:Hide()
+    local modelPicker=RG.Models:Build(main,RG,self,"work");modelPicker:SetPoint("BOTTOMLEFT",0,160);modelPicker:SetPoint("BOTTOMRIGHT",0,160);modelPicker:Hide()
     self.send = button(main, "Send message", 130, function() self:SendMessage() end); self.send:SetPoint("BOTTOMRIGHT", 0, 9)
     self.counter = label(main, 11, {0.58, 0.58, 0.54}, "Fonts\\ARIALN.TTF"); self.counter:SetPoint("BOTTOMRIGHT", -145, 24); self.counter:SetText("0 / 6000 bytes")
     local hint = label(main, 11, {0.58, 0.58, 0.54}, "Fonts\\ARIALN.TTF"); hint:SetPoint("BOTTOMRIGHT", -145, 9); hint:SetText("Enter sends · Shift+Enter new line · Esc releases keyboard")
@@ -485,8 +479,8 @@ function U:Refresh()
     self.breadcrumb:SetText(s and safe(s.workspace .. "  /  " .. s.kind .. "  /  " .. s.cwd) or "Connected to the work you already have in progress")
     local blocked = self.QuestionMode(s) ~= "none"
     self.controls:SetShown(blocked and not self.newMode)
-    self.newButton:SetText(self.newMode and "Cancel new" or "New chat"); self.kindButton:SetShown(self.newMode or false)
-    self.kindButton:SetText(self.newKind or "codex")
+    self.newButton:SetText(self.newMode and "Cancel new" or "New chat"); self.modelPicker:SetShown(self.newMode or false)
+    RG.Models:Refresh(self,RG)
     if blocked and self.view == "conversation" and self.lastBlockedPane ~= s.pane then self.view = "questions"; self.lastContent = nil end
     self.lastBlockedPane = blocked and s.pane or nil
     self:SyncComposer()
@@ -503,6 +497,7 @@ function U:UpdateStatus()
     local s = data.selected
     local ready = fresh and data.mode == "interactive" and s and s.pane == RG.selected and not s.cached and not RG.Transport.pending and not RG.Transport.exhausted
     self.send:SetEnabled(ready and (self.newMode or s.activeAgent ~= false) and true or false); self.newButton:SetEnabled(ready and true or false)
+    RG.Models:Refresh(self,RG)
     self.stop:SetEnabled(ready and s.status == "working" or false)
     local question = self.QuestionMode(s)
     for _, b in ipairs(self.keyButtons) do b:SetEnabled(ready and (b.questionKey == "shift+left" and question == "queued" or b.questionKey ~= "shift+left" and question == "visible") or false) end

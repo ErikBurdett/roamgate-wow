@@ -1,5 +1,5 @@
 local _, RG = ...
-local G={view="terminal",messageFrames={},questRows={}};RG.Guide=G;G.UI=G
+local G={view="terminal",messageFrames={},questRows={},chatRows={},views={}};RG.Guide=G;G.UI=G
 local T=RG.Theme
 local function safe(s) s=RG.Character.Public(s);return tostring(s or ""):gsub("|","||") end
 local function action(text, width, parent, fn)
@@ -18,14 +18,22 @@ function G:Run(actionName, fn)
 end
 function G:SaveDraft()
     if not self.draftMode or not self.composer then return end
-    self.saved[self.draftMode == "answer" and "answerDraft" or "draft"] = self.composer:GetText()
+    local field=self.draftMode == "answer" and "answerDraft" or "draft"
+    self.saved[field]=self.composer:GetText()
+    local draft=self.saved.chats[self.draftKey];if draft then draft[field]=self.composer:GetText() end
 end
 function G:SyncComposer()
     if not self.composer then return end
     local mode = not self.newMode and self.view == "questions" and RG.UI.QuestionMode(self.data and self.data.selected) == "visible" and "answer" or "message"
-    if self.draftMode == mode then return end
-    self:SaveDraft();self.draftMode=mode
-    self.composer:SetText(self.saved[mode == "answer" and "answerDraft" or "draft"] or "")
+    local key=self.newMode and "new" or self.selected or "new"
+    if self.draftMode == mode and self.draftKey==key then return end
+    self:SaveDraft()
+    if self.draftKey~=key and self.scroll then
+        local old=self.saved.chats[self.draftKey];if old then old.scroll=self.scroll:GetVerticalScroll()end
+        self.restoreScroll=(self.saved.chats[key] or {}).scroll or 0
+    end
+    self.saved.chats[key]=self.saved.chats[key] or {};self.draftMode,self.draftKey=mode,key
+    self.composer:SetText(self.saved.chats[key][mode == "answer" and "answerDraft" or "draft"] or "")
 end
 function G:Navigate(view)
     self.view=view;self.lastText=nil
@@ -76,12 +84,18 @@ end
 function G:Receive(data)
     if data.character~=self:CharacterKey() then return end
     local previous=self.data and self.data.selected
+    if previous then self.views[previous.pane]=previous end
     self.data=data
     if data.selected then self.selected=data.selected.pane;self.saved.pane=self.selected
     elseif data.guidePane and data.guidePane~="" then
         self.selected=data.guidePane;self.saved.pane=self.selected
-        if previous and previous.pane==self.selected then local cached={};for k,v in pairs(previous)do cached[k]=v end;cached.cached=true;data.selected=cached end
+        local view=self.views[self.selected]
+        if view then local cached={};for k,v in pairs(view)do cached[k]=v end;cached.cached=true;data.selected=cached end
     else self.selected=nil;self.saved.pane=nil end
+    if self.openCreatedAfterError then
+        if self.selected and self.selected~=self.openCreatedAfterError then self.newMode=false end
+        self.openCreatedAfterError=nil
+    end
     if self:IsShown() then self:Refresh() else self:UpdateStatus() end
 end
 function G:ActionResult(sent, ack)
@@ -90,11 +104,58 @@ function G:ActionResult(sent, ack)
         local mode=sent.op=="answer" and "answer" or "message"
         local field=mode=="answer" and "answerDraft" or "draft"
         if (sent.op=="answer" or sent.op=="guide_new" or sent.op=="guide_message") then
+            local bucket=self.saved.chats[sent.op=="guide_new" and "new" or sent.pane]
+            if bucket and bucket[field]==sent.text then bucket[field]="" end
             if self.saved[field]==sent.text then self.saved[field]="" end
             if self.draftMode==mode and self.composer:GetText()==sent.text then self.composer:SetText("") end
         end
-        if sent.op=="guide_new" then self.newMode=false;self.selected=ack.pane;self.saved.pane=ack.pane end
+        if sent.op=="guide_new" or sent.op=="guide_select" then self:SaveDraft();self.newMode=false;self.view="terminal";self.selected=ack.pane;self.saved.pane=ack.pane;self.lastText=nil end
+    elseif sent.op=="guide_new" then
+        self.openCreatedAfterError=self.selected or ""
     end
+end
+function G:ShowSidebar(page)
+    self.saved.sidebar=page;self.characterPage:SetShown(page~="chats");self.chatPage:SetShown(page=="chats")
+    self.characterTab:SetEnabled(page=="chats");self.chatsTab:SetEnabled(page~="chats")
+    if page=="chats" then self:RenderChatList()end
+end
+function G:SelectChat(chat)
+    RG:Activate("guide")
+    if RG.Transport.pending then self:SetNotice("Wait for the current action before switching chats.");return end
+    if self.selected==chat.pane and self.data and self.data.selected and self.data.selected.terminal==chat.terminal and not self.newMode then return end
+    self:SaveDraft()
+    RG.Transport:Send("guide_select",chat.pane,chat.terminal,self)
+end
+function G:BuildChatList(left)
+    local p=CreateFrame("Frame",nil,left);self.chatPage=p;p:SetPoint("TOPLEFT",8,-42);p:SetPoint("BOTTOMRIGHT",-8,8)
+    local heading=T.Label(p,"Guide workspace chats",15,{0.24,0.12,0.04});heading:SetPoint("TOPLEFT",8,-3)
+    local search=CreateFrame("EditBox",nil,p,"InputBoxTemplate");self.chatSearch=search;search:SetPoint("TOPLEFT",13,-31);search:SetSize(214,24);search:SetAutoFocus(false);search:SetMaxLetters(100)
+    search:SetScript("OnTextChanged",function()self:RenderChatList()end);search:SetScript("OnEscapePressed",function(e)e:ClearFocus()end)
+    local hint=T.Label(p,"Search title, provider or workspace",10,{0.3,0.18,0.09});hint:SetPoint("TOPLEFT",9,-58)
+    local scroll=CreateFrame("ScrollFrame","RoamgateGuideChatsScroll",p,"UIPanelScrollFrameTemplate");self.chatScroll=scroll;scroll:SetPoint("TOPLEFT",3,-80);scroll:SetPoint("BOTTOMRIGHT",-26,8)
+    self.chatBody=CreateFrame("Frame",nil,scroll);self.chatBody:SetSize(213,1);scroll:SetScrollChild(self.chatBody)
+    self.chatEmpty=T.Label(self.chatBody,"",12,{0.3,0.18,0.09});self.chatEmpty:SetPoint("TOPLEFT",5,-5);self.chatEmpty:SetWidth(200)
+end
+function G:RenderChatList()
+    if not self.chatBody then return end
+    local search=(self.chatSearch:GetText() or ""):lower();local count=0
+    for _,row in ipairs(self.chatRows)do row:Hide()end
+    for _,chat in ipairs(self.data and self.data.guideChats or {})do
+        local text=(chat.title or chat.pane).." "..(chat.kind or "").." "..(chat.workspace or "").." "..(chat.model or "")
+        if search=="" or text:lower():find(search,1,true)then
+            count=count+1;local row=self.chatRows[count]
+            if not row then
+                row=CreateFrame("Button",nil,self.chatBody);row:SetSize(213,68);row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                row.title=T.Label(row,"",12,{0.23,0.13,0.06});row.title:SetPoint("TOPLEFT",5,-4);row.title:SetSize(200,32)
+                row.detail=T.Label(row,"",10,{0.3,0.18,0.09});row.detail:SetPoint("TOPLEFT",5,-40);row.detail:SetSize(200,24);self.chatRows[count]=row
+            end
+            row:SetPoint("TOPLEFT",0,-(count-1)*70)
+            row.title:SetText(safe((self.selected==chat.pane and "> " or "")..(chat.title or chat.pane)))
+            row.detail:SetText(safe((chat.kind or "guide")..(chat.model and chat.model~="" and " / "..chat.model or "").."\n"..(chat.available==false and "Closed in Roamgate" or (chat.status=="blocked" and "Needs you" or chat.workspace or "WoW Adventures"))))
+            row:SetScript("OnClick",function()self:SelectChat(chat)end);row:Show()
+        end
+    end
+    self.chatBody:SetHeight(math.max(1,count*70));self.chatEmpty:SetText(search~="" and "No matching chats." or "Your guide conversations will appear here. Start a new conversation to begin.");self.chatEmpty:SetShown(count==0)
 end
 function G:Send()
     self:Run("Send failed",function()self:Submit()end)
@@ -116,6 +177,7 @@ end
 function G:Build()
     RoamgateDB.guideCharacters=RoamgateDB.guideCharacters or {}
     local key=self:CharacterKey();RoamgateDB.guideCharacters[key]=RoamgateDB.guideCharacters[key] or {};self.saved=RoamgateDB.guideCharacters[key]
+    if not self.saved.chats then self.saved.chats={};self.saved.chats[self.saved.pane or "new"]={draft=self.saved.draft,answerDraft=self.saved.answerDraft} end
     self.selected=self.saved.pane;self.includeContext=self.saved.includeContext~=false
     local f=T.Panel(UIParent,"RoamgateGuideWindow");self.frame=f
     f:SetSize(1000,740);f:SetScale(RoamgateDB.scale or math.min(1,(UIParent:GetWidth()-90)/1000,(UIParent:GetHeight()-90)/740))
@@ -130,7 +192,10 @@ function G:Build()
     local sub=T.Label(titlebar,"YOUR CHARACTER. YOUR QUESTS. YOUR JOURNEY.",11);sub:SetPoint("TOPLEFT",73,-36)
     self.connection=T.Label(titlebar,"",12);self.connection:SetPoint("TOPRIGHT",-8,-15)
     local close=CreateFrame("Button",nil,f,"UIPanelCloseButton");close:SetPoint("TOPRIGHT",-3,-3)
-    local left=T.Panel(f,nil,true);left:SetPoint("TOPLEFT",14,-78);left:SetPoint("BOTTOMLEFT",14,44);left:SetWidth(263);T.Page(left,true)
+    local leftRoot=T.Panel(f,nil,true);leftRoot:SetPoint("TOPLEFT",14,-78);leftRoot:SetPoint("BOTTOMLEFT",14,44);leftRoot:SetWidth(263);T.Page(leftRoot,true)
+    self.characterTab=action("Character",111,leftRoot,function()self:ShowSidebar("character")end);self.characterTab:SetPoint("TOPLEFT",15,-10)
+    self.chatsTab=action("Chats",111,leftRoot,function()self:ShowSidebar("chats")end);self.chatsTab:SetPoint("LEFT",self.characterTab,"RIGHT",8,0)
+    local left=CreateFrame("Frame",nil,leftRoot);self.characterPage=left;left:SetPoint("TOPLEFT",0,-34);left:SetPoint("BOTTOMRIGHT",0,0)
     local chapter=T.Label(left,"The Adventurer",18,{0.24,0.12,0.04});chapter:SetPoint("TOPLEFT",16,-16)
     self.characterText=T.Label(left,"",12,{0.24,0.14,0.07});self.characterText:SetPoint("TOPLEFT",16,-46);self.characterText:SetWidth(230);self.characterText:SetHeight(136)
     local overview=action("About my character",226,left,function()self:Suggest("Tell me about my character and what I should focus on at this level.")end);overview:SetPoint("TOPLEFT",17,-186)
@@ -140,6 +205,7 @@ function G:Build()
     local scroll=CreateFrame("ScrollFrame","RoamgateGuideQuestScroll",left,"UIPanelScrollFrameTemplate");scroll:SetPoint("TOPLEFT",13,-317);scroll:SetPoint("BOTTOMRIGHT",-30,16)
     self.questBody=CreateFrame("Frame",nil,scroll);self.questBody:SetSize(225,1);scroll:SetScrollChild(self.questBody)
     self.questEmpty=T.Label(self.questBody,"",12,{0.3,0.18,0.09});self.questEmpty:SetPoint("TOPLEFT",5,-5);self.questEmpty:SetWidth(210)
+    self:BuildChatList(leftRoot);self:ShowSidebar(self.saved.sidebar or "character")
     local right=CreateFrame("Frame",nil,f);right:SetPoint("TOPLEFT",300,-82);right:SetPoint("BOTTOMRIGHT",-22,46)
     self.sessionTitle=T.Label(right,"A companion for your adventures",18);self.sessionTitle:SetPoint("TOPLEFT",3,0);self.sessionTitle:SetWidth(665);self.sessionTitle:SetHeight(27)
     local live=action("Live reply",100,right,function()self:Navigate("terminal")end);live:SetPoint("TOPLEFT",0,-36)
@@ -157,6 +223,7 @@ function G:Build()
         if i==1 then b:SetPoint("LEFT",0,0) else b:SetPoint("LEFT",self.keyButtons[i-1],"RIGHT",4,0) end;self.keyButtons[i]=b
     end
     self.confirm=action("Confirm / Enter",130,self.controls,function()local s=self.data and self.data.selected;if s then self.confirmProof=s.proof;StaticPopup_Show("ROAMGATE_GUIDE_CONFIRM",safe(s.title)) end end);self.confirm:SetPoint("RIGHT",0,0)
+    local modelPicker=RG.Models:Build(right,self,self,"guide");modelPicker:SetPoint("BOTTOMLEFT",0,153);modelPicker:SetPoint("BOTTOMRIGHT",0,153)
     StaticPopupDialogs.ROAMGATE_GUIDE_CONFIRM={text="Send Enter to the guide question shown for:\n\n%s\n\nReview the highlighted choice before confirming.",button1="Send Enter",button2="Go back",timeout=0,whileDead=true,hideOnEscape=true,preferredIndex=3,OnAccept=function()local s=self.data and self.data.selected;if s and s.proof==self.confirmProof then RG.Transport:Send("key","enter","",self)else self:SetNotice("The question changed. Review the current choice.")end end}
     local compose=T.Panel(right);compose:SetPoint("BOTTOMLEFT",0,49);compose:SetPoint("BOTTOMRIGHT",0,49);compose:SetHeight(96)
     local cs=CreateFrame("ScrollFrame","RoamgateGuideComposeScroll",compose,"UIPanelScrollFrameTemplate");cs:SetPoint("TOPLEFT",13,-10);cs:SetPoint("BOTTOMRIGHT",-29,10)
@@ -166,7 +233,7 @@ function G:Build()
     self.composer:SetScript("OnEscapePressed",function(e)e:ClearFocus()end);self.composer:SetScript("OnEnterPressed",function(e)if IsShiftKeyDown()then e:Insert("\n")else self:Send()end end)
     self.composer:SetScript("OnCursorChanged",function(_,_,y,_,h)local n=-y;local current=cs:GetVerticalScroll();if n<current then cs:SetVerticalScroll(n)elseif n+h>current+cs:GetHeight()then cs:SetVerticalScroll(n+h-cs:GetHeight())end end)
     self.send=action("Open guide & ask",154,right,function()self:Send()end);self.send:SetPoint("BOTTOMRIGHT",0,12)
-    self.newChat=action("New conversation",145,right,function()self.newMode=true;self:SetNotice("Your next question will open a separate guide conversation.");self:UpdateStatus();self.composer:SetFocus()end);self.newChat:SetPoint("BOTTOMLEFT",0,12)
+    self.newChat=action("New conversation",145,right,function()self.newMode=not self.newMode;self:SetNotice(self.newMode and "Choose a provider and model, then ask your first question." or "Returned to your guide conversation.");self:Refresh();self.composer:SetFocus()end);self.newChat:SetPoint("BOTTOMLEFT",0,12)
     self.contextToggle=action("",225,right,function()self.includeContext=not self.includeContext;self.saved.includeContext=self.includeContext;self:UpdateStatus()end);self.contextToggle:SetPoint("LEFT",self.newChat,"RIGHT",8,0)
     self.notice=T.Label(f,"",11);self.notice:SetPoint("BOTTOMLEFT",32,20);self.notice:SetPoint("BOTTOMRIGHT",-32,20);self.notice:SetHeight(16)
     f:SetScript("OnHide",function()self.composer:ClearFocus();if RG.UI:IsShown()then RG:Activate("work")end end)
@@ -180,7 +247,7 @@ function G:Render()
     if self.view=="context" then entries={{role="character context",text=self.character and RG.Character:Text(self.character,self.questID) or (self.contextError or "Character details have not loaded yet.")}}
     elseif s then
         if self.view=="conversation" and #(s.entries or {})>0 then entries=s.entries
-        else entries={{role=RG.UI.QuestionMode(s)=="visible" and "question · review before confirming" or "guide · live reply",text=self.view=="questions" and (s.questionScreen or s.screen) or s.screen}} end
+        else entries={{role=s.archived and "saved view · chat closed in Roamgate" or (RG.UI.QuestionMode(s)=="visible" and "question · review before confirming" or "guide · live reply"),text=self.view=="questions" and (s.questionScreen or s.screen) or (self.view=="conversation" and (s.transcript or s.screen) or s.screen)}} end
     else entries={{role="Welcome, adventurer",text="Open a dedicated Roamgate chat for your journey through WoW Forever.\n\nAsk about your class, equipment, the world, or a quest. Choose a quest on the left to prepare a question with its objectives.\n\nThe guide receives a fresh character snapshot only when you send. Your work conversations stay in the other grimoire."}} end
     local key=self.view..(self.selected or "");for _,e in ipairs(entries)do key=key..e.role..e.text end
     if key==self.lastText then return end;self.lastText=key
@@ -195,7 +262,7 @@ function G:Render()
         m.text:SetFont(s and self.view~="context" and "Interface\\AddOns\\Roamgate\\Media\\Mono.ttf" or "Fonts\\ARIALN.TTF",s and 13 or 16,"");m.text:SetText(safe(e.text))
         local h=m.text:GetStringHeight()+(e.continuation and 12 or 42);m:SetHeight(h);m:Show();y=y+h
     end
-    self.content:SetHeight(math.max(1,y));if bottom then self.scroll:SetVerticalScroll(math.max(0,y-self.scroll:GetHeight()))elseif self.lastView~=self.view then self.scroll:SetVerticalScroll(0)end;self.lastView=self.view
+    self.content:SetHeight(math.max(1,y));if self.restoreScroll then self.scroll:SetVerticalScroll(math.min(self.restoreScroll,math.max(0,y-self.scroll:GetHeight())));self.restoreScroll=nil elseif bottom then self.scroll:SetVerticalScroll(math.max(0,y-self.scroll:GetHeight()))elseif self.lastView~=self.view then self.scroll:SetVerticalScroll(0)end;self.lastView=self.view
 end
 function G:UpdateStatus()
     if not self.frame then return end
@@ -207,6 +274,8 @@ function G:UpdateStatus()
     local question=RG.UI.QuestionMode(s)
     local blocked=question~="none" and not self.newMode
     self.controls:SetShown(blocked or false)
+    self.modelPicker:SetShown(self.newMode or not self.selected);RG.Models:Refresh(self,self)
+    self.newChat:SetText(self.newMode and "Cancel new" or "New conversation")
     self.send:SetText(self.draftMode=="answer" and "Paste answer" or (blocked and "Review question" or ((self.newMode or not self.selected) and "Open guide & ask" or "Ask your guide")))
     self.send:SetEnabled(ready and ((self.newMode or not self.selected) and self.data.guideStartProof or (s and s.activeAgent~=false and not s.cached)) and true or false)
     self.newChat:SetEnabled(ready and true or false)
@@ -217,7 +286,7 @@ function G:UpdateStatus()
     self.questions:SetText(question=="queued" and "Open question" or "Questions")
     if RG.Transport.pending and RG.Transport.pending.scope=="guide" and GetTime()-RG.Transport.pendingAt>25 then self:SetNotice("Waiting for guide startup or delivery. Your question is retained; do not resend it yet.")end
 end
-function G:Refresh()if self.dirty then self:RefreshContext()end;self:UpdateStatus();self:Render();self:TryOpenQuestion()end
+function G:Refresh()if self.dirty then self:RefreshContext()end;self:UpdateStatus();self:Render();self:RenderChatList();self:TryOpenQuestion()end
 function G:Open()
     if not self.frame then return end
     local wasShown=self:IsShown()

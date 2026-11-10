@@ -53,9 +53,15 @@ the transport strip only while World of Warcraft is the focused window.
   ordinary Send action to **Review question**, preserving your task until you
   finish answering; it never silently pastes a work task into an answer field.
 - **New chat** starts a chosen Codex, Claude, Hermes or OpenCode agent in the selected
-  session's project and workspace. Write the first task, choose the agent, and
-  press **Start chat**. The existing desktop tab retains focus. Agent defaults come
-  from its installed configuration; this version does not select model or effort.
+  session's project and workspace. Choose the provider and model in the **New chat**
+  row, write the first task, and press **Start chat**. Codex offers Astra, Sol,
+  Terra and Luna; Claude offers Sonnet, Haiku, Opus and Fable. **Installed default**
+  omits the model override. Hermes/OpenCode currently use their installed defaults.
+  Work chats initially offer Codex/Astra, or Fable when first switching to Claude;
+  each book remembers its own last choice for each provider
+  in the addon's saved variables. These choices apply only to new conversations.
+  Existing chats, Roamgate settings, provider configuration and effort defaults
+  are unchanged. The existing desktop tab retains focus.
 - **Stop** requests Escape in a working agent. Check its resulting status.
 
 The minimap badge counts waiting agents. Sounds and chat notifications announce
@@ -83,17 +89,36 @@ window; opening it preserves your work chat and draft. Both windows may remain
 open. The window you last interact with receives the detailed refreshes; the
 other keeps its cached view. They share one outbound action at a time.
 
-The left page shows your character, level, class, race, location, and current
+The left page's **Character** tab shows your level, class, race, location, and current
 quest log. Choose a quest to prepare a question, or use **About my character**,
 **Equipment & abilities**, or **What should I do next?**. These fill the draft;
 they do not send it automatically. The right page has **Live reply**,
 **Conversation**, **Questions**, and a **Context** preview.
 
-**Open guide & ask** starts a Codex chat in a dedicated **WoW Adventures**
-workspace through Herdr. It uses the installed agent defaults and preserves the
-desktop's focus. Follow-ups use that same guide. **New conversation** starts a
-fresh guide when you send the next question. A durable character-to-pane binding
-and separate drafts keep different characters and work chats apart.
+**Open guide & ask** starts a chat in a dedicated **WoW Adventures** workspace
+through Herdr, preserving desktop focus. The initial choice is **Claude / Sonnet**,
+with a provider/model selector above the composer. **New conversation** reveals
+the selector again and keeps a separate first-question draft. **Cancel new**
+returns to the existing chat. Follow-ups stay with the selected conversation;
+changing the new-chat choice never changes an existing agent's model.
+
+The left page's **Chats** tab lists earlier conversations for this character,
+including chats opened directly in its guide workspace in Roamgate. Search by
+title, provider or workspace, then click a chat to reopen its live reply. Drafts
+and scroll positions are kept separately. **Conversation** reads that pane's
+Roamgate history using the existing cache; switching never sends a prompt.
+The registry survives companion restarts and retains earlier chats when a new
+one is created. Different characters have separate guide workspaces and history.
+Closed panes can display their last locally saved view if one was captured;
+they cannot receive messages or approvals. Reopen a closed agent in Roamgate
+to continue it. This is a saved view, not a complete export of closed sessions.
+
+Model flags are passed to the new process through Herdr's argument passthrough,
+never through `/model` or a settings edit. See the
+[Claude model configuration](https://code.claude.com/docs/en/model-config) and
+[Codex command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
+Sonnet is the guide's practical starting choice; choose a different model for
+your own needs before opening a new conversation.
 
 Each submitted game question can include a fresh snapshot: character identity,
 level/class/race/faction, zone and available map position, health and attributes,
@@ -177,7 +202,7 @@ them with private permissions. Roamgate credentials stay in the existing private
 Roamgate configuration and are never copied to the addon or journal.
 
 File/diff editing, image attachments, voice, remote machines, worktree management,
-and provider-specific model pickers are not implemented in version 0.2.0. Use the
+and per-chat effort controls are not implemented in version 0.3.0. Use the
 existing Roamgate client for those operations. This release targets Forever
 **1.60.1 / interface 16001** on this machine's **Hyprland / Wine** setup.
 
