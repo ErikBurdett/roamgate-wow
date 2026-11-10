@@ -99,6 +99,13 @@ Game chat, guild/party messages and bag contents are not collected. Unsupported
 client APIs are handled with explicit omissions, using modern and legacy quest
 API fallbacks.
 
+WoW Forever may mark game values as secret. The collector drops those values
+before formatting, comparison or arithmetic, and omits inaccessible table fields.
+The snapshot tells the guide when protected details were omitted. Those values
+are never decoded or sent to the companion; readable quest and character data
+continue to work. See Blizzard's generated
+[secret-value API documentation](https://github.com/Gethe/wow-ui-source/blob/classic/Interface/AddOns/Blizzard_APIDocumentationGenerated/FrameScriptDocumentation.lua).
+
 If character collection fails, the Grimoire shows the error and keeps your
 draft. **Character & quests: off** allows sending without collecting a snapshot;
 answering an agent's question also works independently of character APIs.

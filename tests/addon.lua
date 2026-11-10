@@ -220,5 +220,32 @@ gs.status="blocked";gs.questionMode="visible";RG.Guide:Navigate("questions");RG.
 RG.Guide.composer:SetText("A reviewed answer");RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
 check(RG.Transport.pending.op=="answer","answering an agent never depends on character collection")
 RG.Transport.pending=nil;RG.Character.Collect=collect
+do
+    -- Stock Lua has no secret primitives. Use a sentinel that throws on every
+    -- attempted read, conversion and operation, plus the client's public guards.
+    local secret=newproxy(true)
+    for _,name in ipairs({"__tostring","__index","__concat","__add","__mul","__lt","__le"})do getmetatable(secret)[name]=function()error("attempt to operate on a secret value")end end
+    local forbidden=setmetatable({},{__index=function()error("forbidden table read")end})
+    local oldSecret,oldTable,oldAccess=issecretvalue,issecrettable,canaccesstable
+    local oldHealth,oldStats,oldMap,oldQuests=UnitHealth,UnitStat,C_Map,C_QuestLog
+    issecretvalue=function(v)return rawequal(v,secret)end
+    issecrettable=function()return false end
+    canaccesstable=function(v)return not rawequal(v,forbidden)end
+    UnitHealth=function()return secret end
+    UnitStat=function()return secret,7 end
+    C_Map={GetBestMapForUnit=function()return 42 end,GetPlayerMapPosition=function()return {GetXY=function()return secret,0.5 end}end}
+    C_QuestLog={GetNumQuestLogEntries=function()return 1 end,GetInfo=function()return {title="A public quest",level=27,questID=123,isComplete=secret}end,GetQuestObjectives=function()return {{text=secret,finished=secret},{text="Visit the inn",finished=false},forbidden}end}
+    local snapshot=RG.Character:Collect();local text=RG.Character:Text(snapshot)
+    check(snapshot.health=="unavailable" and not snapshot.coordinates,"secret health and coordinates are omitted before formatting or arithmetic")
+    check(snapshot.stats:find("Strength 7",1,true) and #snapshot.quests[1].objectives==1,"safe API return positions and public quest objectives survive secret filtering")
+    check(snapshot.restricted and text:find("protected by the client",1,true) and RG.Character.Clean(secret)=="","snapshot explicitly labels omitted protected values")
+    check(RG.Guide:RefreshContext() and not RG.Guide.contextError,"protected character values do not break the Grimoire page")
+    gs.status="idle";gs.questionMode="none";RG.Guide:Receive(guideData);RG.Guide:Navigate("terminal");RG.Guide.includeContext=true
+    RG.Guide.composer:SetText("Where should I quest next?");RG.Guide.composer.scripts.OnEnterPressed(RG.Guide.composer)
+    check(RG.Transport.pending and RG.Transport.pending.op=="guide_message" and RG.Transport.pending.extra:find("Visit the inn",1,true),"Enter delivers a guide question with readable context despite protected game fields")
+    RG.Transport.pending=nil
+    issecretvalue,issecrettable,canaccesstable=oldSecret,oldTable,oldAccess
+    UnitHealth,UnitStat,C_Map,C_QuestLog=oldHealth,oldStats,oldMap,oldQuests
+end
 check(bindings["ALT-G"]=="ROAMGATE_GUIDE","Alt+G opens the guide without changing Alt+R")
 print("Lua addon contract: "..checks.." checks passed")

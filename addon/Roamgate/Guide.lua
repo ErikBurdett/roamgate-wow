@@ -1,7 +1,7 @@
 local _, RG = ...
 local G={view="terminal",messageFrames={},questRows={}};RG.Guide=G;G.UI=G
 local T=RG.Theme
-local function safe(s) return tostring(s or ""):gsub("|","||") end
+local function safe(s) s=RG.Character.Public(s);return tostring(s or ""):gsub("|","||") end
 local function action(text, width, parent, fn)
     return T.Button(parent,text,width,function(...) RG:Activate("guide");return fn(...) end)
 end
