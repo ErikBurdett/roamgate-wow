@@ -1,11 +1,31 @@
 local _, RG = ...
-local U = { view = "conversation", rows = {}, messageFrames = {}, filter = "all" }
+local U = { view = "terminal", rows = {}, messageFrames = {}, filter = "all", scrollPositions = {} }
 RG.UI = U
 local GOLD, BLUE, INK = {0.85, 0.72, 0.42}, {0.46, 0.77, 0.92}, {0.055, 0.065, 0.075}
 local LABELS = { blocked = "NEEDS YOU", working = "WORKING", idle = "READY", done = "FINISHED", unknown = "UNKNOWN" }
 local COLORS = { blocked = "ffffc45c", working = "ff77c5ed", idle = "ff9ca99b", done = "ff84c99d", unknown = "ffa0a0a0" }
 local ORDER = { blocked = 1, working = 2, done = 3, idle = 4, unknown = 5 }
 local function safe(s) return tostring(s or ""):gsub("|", "||") end
+-- Bound each native FontString and split at line boundaries where possible.
+-- Keep UTF-8 characters intact; long code/transcripts must remain scrollable.
+local function blocks(entries)
+    local result = {}
+    for _, e in ipairs(entries) do
+        local text, start = tostring(e.text or ""):gsub("\r\n", "\n"):gsub("\r", ""), 1
+        repeat
+            local finish = math.min(#text, start + 1799)
+            if finish < #text then
+                local newline = text:sub(start, finish):match(".*()\n")
+                if newline and newline > 900 then finish = start + newline - 1
+                else while finish > start and (text:byte(finish + 1) or 0) >= 128 and (text:byte(finish + 1) or 0) < 192 do finish = finish - 1 end end
+            end
+            table.insert(result, {role=e.role,text=text:sub(start,finish),link=e.link,continuation=start>1})
+            start = finish + 1
+        until start > #text
+    end
+    return result
+end
+U.TextBlocks = blocks
 local function label(parent, size, color, font)
     local t = parent:CreateFontString(nil, "OVERLAY")
     t:SetFont(font or "Fonts\\FRIZQT__.TTF", size, "")
@@ -31,6 +51,11 @@ local function edit(parent, name, multi)
     return e
 end
 function U:IsShown() return self.frame and self.frame:IsShown() end
+function U:SaveScroll()
+    if self.contentLocation and self.scroll then
+        self.scrollPositions[self.contentLocation] = {offset=self.scroll:GetVerticalScroll(), bottom=self.scroll:GetVerticalScrollRange()-self.scroll:GetVerticalScroll()<45}
+    end
+end
 function U:SetNotice(text)
     self.noticeText = text
     if self.notice then self.notice:SetText(safe(text)) end
@@ -67,7 +92,7 @@ function U:Build()
         self.filter = self.filter == "all" and "attention" or "all"
         self.filterButton:SetText(self.filter == "all" and "All sessions" or "Needs you"); self:RenderList()
     end); self.filterButton:SetPoint("TOPLEFT", 10, -48)
-    local refresh = button(side, "Refresh", 124, function() RG.Transport.loadElapsed = 6; self:SetNotice("Refreshing your sessions...") end); refresh:SetPoint("TOPRIGHT", -10, -48)
+    local refresh = button(side, "Refresh", 124, function() RG.Transport:RefreshSoon(); self:SetNotice("Refreshing your sessions...") end); refresh:SetPoint("TOPRIGHT", -10, -48)
     self.workspaceButton = button(side, "All workspaces", 258, function() self:WorkspaceMenu(side) end); self.workspaceButton:SetPoint("TOPLEFT", 10, -81)
     self.listScroll = CreateFrame("ScrollFrame", "RoamgateSessionScroll", side, "UIPanelScrollFrameTemplate")
     self.listScroll:SetPoint("TOPLEFT", 8, -120); self.listScroll:SetPoint("BOTTOMRIGHT", -28, 12)
@@ -82,7 +107,8 @@ function U:Build()
         b:SetPoint("TOPLEFT", (i - 1) * 103, -57); self.tabs[tab[2]] = b
     end
     self.stop = button(main, "Stop", 68, function() RG.Transport:Send("stop", "", "") end); self.stop:SetPoint("TOPRIGHT", -2, -57)
-    self.contentPanel = panel(main); self.contentPanel:SetPoint("TOPLEFT", 0, -92); self.contentPanel:SetPoint("BOTTOMRIGHT", 0, 201)
+    self.contentPanel = panel(main); self.contentPanel:SetPoint("TOPLEFT", 0, -103); self.contentPanel:SetPoint("BOTTOMRIGHT", 0, 201)
+    self.contentStatus = label(main, 11, {0.65,0.7,0.72}, "Fonts\\ARIALN.TTF"); self.contentStatus:SetPoint("TOPLEFT", 5, -85); self.contentStatus:SetPoint("TOPRIGHT", -5, -85); self.contentStatus:SetHeight(14)
     self.scroll = CreateFrame("ScrollFrame", "RoamgateConversationScroll", self.contentPanel, "UIPanelScrollFrameTemplate")
     self.scroll:SetPoint("TOPLEFT", 13, -13); self.scroll:SetPoint("BOTTOMRIGHT", -30, 13)
     self.content = CreateFrame("Frame", nil, self.scroll); self.content:SetSize(700, 1); self.scroll:SetScrollChild(self.content)
@@ -149,11 +175,11 @@ function U:Build()
     local grip = CreateFrame("Button", nil, f); grip:SetSize(18, 18); grip:SetPoint("BOTTOMRIGHT", -3, 3)
     local gt = grip:CreateTexture(nil, "ARTWORK"); gt:SetAllPoints(); gt:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end); grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
-    f:SetScript("OnHide", function() self.composer:ClearFocus(); self.search:ClearFocus(); self.newMode = false end)
+    f:SetScript("OnHide", function() self:SaveScroll(); self.composer:ClearFocus(); self.search:ClearFocus() end)
     self:BuildMinimap()
     self:BuildHUD()
     self.composer:SetText(RG.selected and RoamgateDB.drafts[RG.selected] or "")
-    self:SetNotice("Waiting for the local companion. /rg opens or closes this window.")
+    self:SetNotice("Alt+R minimizes / restores this workspace when the key is available. /rg also works.")
     self:Refresh(); f:Hide()
 end
 function U:BuildMinimap()
@@ -170,7 +196,7 @@ function U:BuildMinimap()
 end
 function U:OpenPane(pane)
     if pane then RG:Select(pane) end
-    self.frame:Show(); RG.Transport.loadElapsed = 3; self:Refresh()
+    self.frame:Show(); RG.Transport:RefreshSoon(); self:Refresh()
 end
 function U:BuildHUD()
     self.unread = {}
@@ -241,8 +267,9 @@ function U:SendMessage()
     else RG.Transport:Send("message", text) end
 end
 function U:Navigate(view, path)
+    self:SaveScroll()
     self.view, RG.browsePath, self.lastContent = view, path or "", nil
-    RG.Transport.loadElapsed = 3; self:RenderContent()
+    RG.Transport:RefreshSoon(); self:RenderContent()
 end
 function U:WorkspaceMenu(parent)
     if self.workspaceMenu and self.workspaceMenu:IsShown() then self.workspaceMenu:Hide(); return end
@@ -275,8 +302,12 @@ function U:ActionResult(sent, ack)
 end
 function U:RenderList()
     if not self.list then return end
-    for _, r in ipairs(self.rows) do r:Hide() end
     local data = RG.data or {}; local filtered = {}; local query = (self.search:GetText() or ""):lower()
+    local signature = query .. self.filter .. (self.workspaceFilter or "") .. (RG.selected or "")
+    for _, a in ipairs(data.agents or {}) do signature = signature .. a.pane .. (a.status or "") .. a.title .. a.workspace .. (a.tab or "") .. a.kind end
+    if signature == self.lastList then return end
+    self.lastList = signature
+    for _, r in ipairs(self.rows) do r:Hide() end
     for _, a in ipairs(data.agents or {}) do
         if (not self.workspaceFilter or self.workspaceFilter == "" or a.workspaceId == self.workspaceFilter) and (self.filter == "all" or a.status == "blocked") and (a.title .. " " .. a.workspace .. " " .. a.kind .. " " .. (a.tab or "")):lower():find(query, 1, true) then table.insert(filtered, a) end
     end
@@ -295,7 +326,7 @@ function U:RenderList()
             r.heading = label(r, 10); r.heading:SetPoint("TOPLEFT", 6, -1)
             r.title = label(r, 14, {0.88,0.85,0.73}, "Fonts\\ARIALN.TTF"); r.title:SetPoint("TOPLEFT", 10, -20); r.title:SetWidth(215); r.title:SetHeight(34)
             r.meta = label(r, 11, BLUE, "Fonts\\ARIALN.TTF"); r.meta:SetPoint("BOTTOMLEFT", 10, 7); r.meta:SetWidth(215); r.meta:SetHeight(14)
-            r:SetScript("OnClick", function(self) RG:Select(self.pane) end)
+            r:SetScript("OnClick", function(row) RG:Select(row.pane); self:Navigate("terminal", "") end)
             r:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:AddLine(safe(self.fullTitle), 0.85, 0.72, 0.42, true); GameTooltip:AddLine(safe(self.cwd), 0.7, 0.7, 0.7, true); GameTooltip:AddLine(self.pane, 0.45, 0.7, 0.8); GameTooltip:Show()
             end); r:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -349,15 +380,20 @@ function U:RenderContent()
     elseif self.view == "terminal" or self.view == "questions" then
         entries = {{role = s.status == "blocked" and "question" or "terminal", text = s.screen}}
     elseif #s.entries > 0 then entries = s.entries
-    else entries = {{role="guide", text=s.historyStatus .. "\n\n" .. s.screen}} end
-    local key = self.view .. (RG.selected or "") .. (RG.browsePath or "")
+    else entries = {{role="fallback", text=s.transcript or s.screen}} end
+    self.contentStatus:SetText(s and (self.view == "conversation" and safe(s.historyStatus) or (s.cached and "Saved view · refreshing..." or "")) or "")
+    local location = self.view .. (RG.selected or "") .. (RG.browsePath or "")
+    local key = location .. tostring(self.content:GetWidth())
     for _, e in ipairs(entries) do key = key .. e.role .. e.text end
     if self.lastContent == key then return end
     self.lastContent = key
-    local nearBottom = self.scroll:GetVerticalScrollRange() - self.scroll:GetVerticalScroll() < 45
+    local saved = self.contentLocation ~= location and self.scrollPositions[location] or nil
+    local nearBottom = saved and saved.bottom or (self.contentLocation == location and self.scroll:GetVerticalScrollRange() - self.scroll:GetVerticalScroll() < 45)
+    if self.contentLocation ~= location and not saved then nearBottom = self.view == "conversation" or self.view == "terminal" or self.view == "questions" end
+    self.contentLocation = location
     for _, f in ipairs(self.messageFrames) do f:Hide() end
     local y, width = 0, math.max(280, self.content:GetWidth() - 14)
-    for i, e in ipairs(entries) do
+    for i, e in ipairs(blocks(entries)) do
         local m = self.messageFrames[i]
         if not m then
             m = CreateFrame("Button", nil, self.content)
@@ -367,16 +403,22 @@ function U:RenderContent()
             self.messageFrames[i] = m
         end
         m:SetPoint("TOPLEFT", 0, -y); m:SetWidth(width)
-        local role = ({user="YOU",assistant="AGENT",question="CURRENT QUESTION · EXACT TERMINAL VIEW",terminal="LIVE TERMINAL",guide="ROAMGATE"})[e.role] or e.role:upper()
+        local role = e.continuation and "" or (({user="YOU",assistant="AGENT",question="CURRENT QUESTION · EXACT TERMINAL VIEW",terminal="LIVE TERMINAL",fallback="RECENT TERMINAL · HISTORY NOT LINKED",guide="ROAMGATE"})[e.role] or e.role:upper())
         m.role:SetText(role); m.role:SetTextColor(unpack(e.role == "user" and BLUE or GOLD))
-        m.text:SetFont((self.view == "terminal" or self.view == "questions" or e.role == "source") and "Interface\\AddOns\\Roamgate\\Media\\Mono.ttf" or "Fonts\\ARIALN.TTF", self.view == "conversation" and 16 or 13, "")
+        local mono = self.view == "terminal" or self.view == "questions" or e.role == "source" or e.role == "fallback"
+        m.text:SetFont(mono and "Interface\\AddOns\\Roamgate\\Media\\Mono.ttf" or "Fonts\\ARIALN.TTF", mono and 13 or 16, "")
+        m.text:SetPoint("TOPLEFT", 3, e.continuation and 0 or -22); m.text:SetWordWrap(true); m.text:SetNonSpaceWrap(true)
         m.text:SetTextColor(unpack(e.link and BLUE or {0.89,0.88,0.82}))
         m:SetScript("OnClick", e.link and function() self:Navigate(e.link.view,e.link.path) end or nil)
-        m.text:SetWidth(width - 6); m.text:SetText(safe(e.text)); local h = m.text:GetStringHeight() + 48
+        m.text:SetWidth(width - 6); m.text:SetText(safe(e.text)); local h = m.text:GetStringHeight() + (e.continuation and 18 or 48)
+        m.rule:SetShown(not e.continuation)
         m:SetHeight(h); m:Show(); y = y + h
     end
     self.content:SetHeight(math.max(1, y))
-    if nearBottom then self.scroll:SetVerticalScroll(math.max(0, y - self.scroll:GetHeight())) end
+    if nearBottom then self.scroll:SetVerticalScroll(math.max(0, y - self.scroll:GetHeight()))
+    elseif saved then self.scroll:SetVerticalScroll(math.min(saved.offset, math.max(0,y-self.scroll:GetHeight())))
+    elseif self.lastLocation ~= location then self.scroll:SetVerticalScroll(0) end
+    self.lastLocation = location
     local activeTab = self.view == "file" and "files" or (self.view:match("^diff:") and "changes" or self.view)
     for key2, b in pairs(self.tabs) do if key2 == activeTab then b:Disable() else b:Enable() end end
 end
@@ -403,7 +445,7 @@ function U:UpdateStatus()
     self.connection:SetText(fresh and (data.mode == "interactive" and "|cff84c99dConnected to this machine|r" or "Read-only connection") or "|cffffc45cWaiting for companion|r")
     self.summary:SetText(n .. " need you  ·  " .. working .. " working  ·  " .. math.max(0, RG.SLOT_COUNT - RG.Transport.slot + 1) .. " updates left")
     local s = data.selected
-    local ready = fresh and data.mode == "interactive" and s and s.pane == RG.selected and not RG.Transport.pending and not RG.Transport.exhausted
+    local ready = fresh and data.mode == "interactive" and s and s.pane == RG.selected and not s.cached and not RG.Transport.pending and not RG.Transport.exhausted
     self.send:SetEnabled(ready and (self.newMode or s.activeAgent ~= false) and true or false); self.newButton:SetEnabled(ready and true or false)
     self.stop:SetEnabled(ready and s.status == "working" or false)
     for _, b in ipairs(self.keyButtons) do b:SetEnabled(ready and s.status == "blocked" or false) end

@@ -1,7 +1,25 @@
 local _, RG = ...
 local events = CreateFrame("Frame")
 RG.statuses = {}
+RG.sessionCache = {}
+function RG:CachedSelection(pane)
+    local cached = self.sessionCache[pane]
+    if not cached then return nil end
+    local copy = {}; for k,v in pairs(cached) do copy[k] = v end
+    copy.cached = true
+    return copy
+end
 function RG:Receive(data)
+    local incoming = data; data = {}; for k,v in pairs(incoming) do data[k] = v end
+    if data.selected then self.sessionCache[data.selected.pane] = data.selected end
+    for pane, cached in pairs(self.sessionCache) do
+        local found
+        for _, agent in ipairs(data.agents or {}) do
+            if agent.pane == pane and agent.terminal == cached.terminal and agent.kind == cached.kind then found = true; break end
+        end
+        if not found then self.sessionCache[pane] = nil end
+    end
+    if not data.selected then data.selected = self:CachedSelection(self.selected) end
     self.data = data
     for _, agent in ipairs(data.agents or {}) do
         local previous = self.statuses[agent.pane]
@@ -10,23 +28,39 @@ function RG:Receive(data)
         end
         self.statuses[agent.pane] = agent.status
     end
-    self.UI:Refresh()
+    if self.UI:IsShown() then self.UI:Refresh() else self.UI:UpdateStatus() end
 end
 function RG:Select(pane)
+    if self.selected == pane then
+        if self.UI.unread then self.UI.unread[pane] = nil end
+        self.Transport:RefreshSoon(); self.UI:Refresh(); return
+    end
+    self.UI:SaveScroll()
     if self.selected then RoamgateDB.drafts[self.selected] = self.UI.composer:GetText() end
     self.selected = pane; RoamgateDB.selected = pane
+    if self.data and (not self.data.selected or self.data.selected.pane ~= pane) then self.data.selected = self:CachedSelection(pane) end
     if self.UI.unread then self.UI.unread[pane] = nil end
     self.UI.composer:SetText(RoamgateDB.drafts[pane] or "")
-    self.UI.view = "conversation"; self.browsePath = ""; self.UI.lastContent = nil
-    self.Transport.loadElapsed = 3
+    self.UI.view = "terminal"; self.browsePath = ""; self.UI.lastContent = nil
+    self.Transport:RefreshSoon()
     self.UI:Refresh()
 end
 function RoamgateToggle()
     if not RG.UI.frame then return end
-    if RG.UI:IsShown() then RG.UI.frame:Hide() else RG.UI.frame:Show(); RG.Transport.loadElapsed = 3; RG.UI:Refresh() end
+    if RG.UI:IsShown() then RG.UI.frame:Hide() else RG.UI.frame:Show(); RG.Transport:RefreshSoon(); RG.UI:Refresh() end
 end
 BINDING_HEADER_ROAMGATE = "Roamgate"
-BINDING_NAME_ROAMGATE_TOGGLE = "Open / close Roamgate"
+BINDING_NAME_ROAMGATE_TOGGLE = "Minimize / restore workspace"
+function RG:InstallBinding()
+    if InCombatLockdown() then self.bindingDeferred = true; return end
+    self.bindingDeferred = nil
+    if not RoamgateDB.bindingInitialized then
+        if not GetBindingKey("ROAMGATE_TOGGLE") and GetBindingAction("ALT-R") == "" then
+            if SetBinding("ALT-R", "ROAMGATE_TOGGLE") then SaveBindings(GetCurrentBindingSet()) end
+        end
+        RoamgateDB.bindingInitialized = true
+    end
+end
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_LOGOUT")
 events:RegisterEvent("UI_SCALE_CHANGED")
@@ -36,6 +70,7 @@ events:SetScript("OnEvent", function(_, event)
         RoamgateDB = RoamgateDB or {}; RoamgateDB.drafts = RoamgateDB.drafts or {}
         RG.selected = RoamgateDB.selected
         RG.UI:Build(); RG.Transport:Start()
+        RG:InstallBinding()
         SLASH_ROAMGATE1, SLASH_ROAMGATE2 = "/rg", "/roamgate"
         SlashCmdList.ROAMGATE = function(msg)
             if msg == "reload" then
@@ -54,7 +89,8 @@ events:SetScript("OnEvent", function(_, event)
         if RG.selected then RoamgateDB.drafts[RG.selected] = RG.UI.composer:GetText() end
     elseif event == "UI_SCALE_CHANGED" and RG.Transport.strip then
         RG.Transport:ApplyScale()
-    elseif event == "PLAYER_REGEN_ENABLED" and RG.UI.queuedNotice then
-        RG.UI:SetNotice(RG.UI.queuedNotice); RG.UI.queuedNotice = nil
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if RG.bindingDeferred then RG:InstallBinding() end
+        if RG.UI.queuedNotice then RG.UI:SetNotice(RG.UI.queuedNotice); RG.UI.queuedNotice = nil end
     end
 end)

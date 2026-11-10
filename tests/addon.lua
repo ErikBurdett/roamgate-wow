@@ -54,11 +54,21 @@ function IsShiftKeyDown() return false end
 function PlaySound() end
 function ReloadUI() end
 function StaticPopup_Show(name) _G.popup=name end
+local bindings={}
+function GetBindingKey(action) for key, value in pairs(bindings) do if value==action then return key end end end
+function GetBindingAction(key) return bindings[key] or "" end
+function SetBinding(key,action) bindings[key]=action;return true end
+function SaveBindings() end
+function GetCurrentBindingSet() return 1 end
 RoamgateDB={drafts={}}
 C_AddOns={LoadAddOn=function() return true end}
 for _, name in ipairs({"Config","Transport","UI","Core"}) do assert(loadfile("addon/Roamgate/"..name..".lua"))("Roamgate",RG) end
 local login=all[#all];login.scripts.OnEvent(login,"PLAYER_LOGIN")
 check(not RG.UI:IsShown(),"starts closed")
+check(RG.UI.view=="terminal","Live terminal is the default view")
+check(bindings["ALT-R"]=="ROAMGATE_TOGGLE","Alt+R default toggle binding installed")
+bindings["ALT-R"]="EXISTING_ACTION";RoamgateDB.bindingInitialized=nil;RG:InstallBinding()
+check(bindings["ALT-R"]=="EXISTING_ACTION","existing keybinding is never overwritten")
 RoamgateToggle();check(RG.UI:IsShown(),"slash/binding opens")
 RG.Transport:Tick(0.3);check(#RG.Transport.cells==640,"fixed optical strip geometry")
 RG.UI:UpdateStatus();check(not RG.UI.send.enabled,"offline actions disabled")
@@ -75,7 +85,7 @@ RG.UI:ActionResult(pending,{state="error",message="Rejected"});check(RG.UI.compo
 RG.UI.composer:SetText("New draft while sending")
 RG.UI:ActionResult(pending,{state="ok",message="Sent"});check(RG.UI.composer:GetText()=="New draft while sending","ack never erases newer typing")
 RG.Transport.pending=nil
-s.status="blocked";s.screen="> 1. Allow\n  2. Decline";RG:Receive(data)
+RG.UI:Navigate("conversation","");s.status="blocked";s.screen="> 1. Allow\n  2. Decline";RG:Receive(data)
 check(RG.UI.view=="questions","blocked sessions open exact question")
 check(RG.UI.confirm.enabled,"fresh question confirm enabled")
 RG.UI.confirm.scripts.OnClick();check(popup=="ROAMGATE_CONFIRM","Enter has explicit confirmation")
@@ -83,8 +93,8 @@ s.proof="changed";StaticPopupDialogs.ROAMGATE_CONFIRM.OnAccept();check(not RG.Tr
 RG.UI.confirm.scripts.OnClick();StaticPopupDialogs.ROAMGATE_CONFIRM.OnAccept();check(RG.Transport.pending.op=="key" and RG.Transport.pending.text=="enter","reviewed Enter sends one key")
 RG.Transport.pending=nil
 now=200;RG.UI:UpdateStatus();check(not RG.UI.send.enabled and not RG.UI.confirm.enabled,"stale view disables input")
-now=100;data.mode="read-only";RG.UI:Refresh();check(not RG.UI.send.enabled,"read-only disables input")
-data.mode="interactive";RG.UI:Refresh()
+now=100;data.mode="read-only";RG:Receive(data);check(not RG.UI.send.enabled,"read-only disables input")
+data.mode="interactive";RG:Receive(data)
 local received=RG.Transport.receivedAt
 C_AddOns={LoadAddOn=function() RoamgateInbox={nonce="wrong",timestamp=10000};return true end}
 RG.Transport:Load();check(RG.Transport.receivedAt==received,"wrong nonce ignored")
@@ -96,11 +106,25 @@ data.browser={view="files",path="",root="/project",entries={{name="docs",path="d
 RG:Receive(data)
 check(RG.UI.messageFrames[2].text:GetText()=="[Folder] docs","file browser renders directory")
 RG.UI.messageFrames[2].scripts.OnClick();check(RG.UI.view=="files" and RG.browsePath=="docs","directory navigation uses requested relative path")
-data.workspaces={{id="w1",name="Project",count=1}};RG.UI:WorkspaceMenu(RG.UI.frame)
+data.workspaces={{id="w1",name="Project",count=1}};RG:Receive(data);RG.UI:WorkspaceMenu(RG.UI.frame)
 RG.UI.workspaceMenu.buttons[2].scripts.OnClick();check(RG.UI.workspaceFilter=="w1","workspace selection filters all panes")
 RG.UI.frame:Hide();RG.UI:Notify(s)
 check(not RG.UI:IsShown(),"HUD notification does not steal game focus")
 check(RG.UI.hudNews:GetText()=="1 new notification","HUD counts unread activity")
 RG.UI:OpenPane(s.pane);check(RG.UI.unread[s.pane]==nil,"opening a thread clears its local notification")
 RG.UI.hudCollapse.scripts.OnClick();check(RG.UI.hud:GetHeight()==42,"HUD collapses to one bar")
+RG.UI:Navigate("conversation","");s.status="idle";RG:Receive(data)
+local previousText=RG.UI.messageFrames[1].text:GetText()
+RoamgateToggle()
+RG:Receive({timestamp=10000,mode="interactive",agents={s}})
+RoamgateToggle()
+check(RG.UI.messageFrames[1].text:GetText()==previousText,"minimize restores cached conversation immediately")
+check(not RG.UI.send.enabled and not RG.Transport:Send("message","unsafe"),"cached display cannot authorize an action")
+RG:Receive(data);check(RG.UI.send.enabled,"fresh selection restores action controls")
+local unicode=string.rep("A雪🌍\n",600);local parts=RG.UI.TextBlocks({{role="assistant",text=unicode}});local joined={}
+for _, part in ipairs(parts) do check(#part.text<=1800,"native text block is bounded");table.insert(joined,part.text) end
+check(table.concat(joined)==unicode,"long chat blocks preserve full Unicode text")
+RG.UI.composer:SetText(string.rep("long message ",400));RG.UI:SendMessage();RG.Transport:Tick(0.25)
+local part=RG.Transport.part;RG.Transport:Load()
+check(RG.Transport.part==part,"fast polling cannot interrupt a multi-frame outbound message")
 print("Lua addon contract: "..checks.." checks passed")

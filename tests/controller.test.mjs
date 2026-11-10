@@ -63,12 +63,42 @@ test('new nonce requires a view handshake, never an action',async t=>{
 });
 test('history failure retains exact terminal output with explicit fallback',async t=>{
   const f=await fixture(t);f.controller.historyCache.clear();f.opts.roamgate.history=async()=>{throw Error('offline');};
+  await f.controller.handle(f.view);await new Promise(r=>setImmediate(r));
   const s=await f.controller.handle(f.view);assert.match(s.selected.historyStatus,/unavailable/);assert.match(s.selected.screen,/Approve command/);
+});
+test('slow conversation history does not block a message acknowledgement and appears when ready',async t=>{
+  const f=await fixture(t);let resolve;
+  f.controller.historyCache.clear();f.opts.roamgate.history=()=>new Promise(r=>resolve=r);
+  await f.controller.handle(f.view);
+  const result=await f.controller.handle(f.command);
+  assert.equal(result.ack.state,'ok');assert.match(result.selected.historyStatus,/Loading/);
+  assert.equal(f.calls.length,1);
+  resolve({entries:[{role:'assistant',text:'History ready'}]});await new Promise(r=>setImmediate(r));
+  const next=await f.controller.handle(f.view);assert.equal(next.selected.entries[0].text,'History ready');
+});
+test('unavailable terminal scrollback cannot suppress delivery acknowledgement',async t=>{
+  const f=await fixture(t);f.controller.historyCache.clear();f.controller.transcripts.clear();
+  f.opts.roamgate.history=async()=>({entries:[]});
+  f.opts.herdr.read=async(pane,visible=true)=>{if(!visible)throw Error('history requires idle');return 'Current live screen';};
+  const s=await f.controller.handle(f.command);assert.equal(s.ack.state,'ok');assert.equal(s.selected.transcript,'Current live screen');
+  f.agent.agent_status='working';f.controller.transcripts.clear();let historyReads=0;
+  f.opts.herdr.read=async(pane,visible=true)=>{if(!visible)historyReads++;return 'Working';};
+  await f.controller.handle(f.view);assert.equal(historyReads,0);
 });
 test('history cache expires despite frequent polling and is invalidated for a replacement session',async t=>{
   const f=await fixture(t);let count=0;f.controller.historyCache.clear();f.opts.roamgate.history=async()=>{count++;return {entries:[]};};
-  for(const n of [100000,102000,104000,106000]) { f.time(n);await f.controller.handle(f.view); }
+  for(const n of [100000,102000,104000,116000]) { f.time(n);await f.controller.handle(f.view); }
   assert.equal(count,2);f.agent.terminal_id='new-session';await f.controller.handle(f.view);assert.equal(count,3);
+});
+test('terminal view reuses recent captures and never fetches conversation history',async t=>{
+  const f=await fixture(t);f.agent.agent_status='working';f.controller.screens.clear();f.controller.historyCache.clear();
+  let reads=0,histories=0;f.opts.herdr.read=async()=>{reads++;return 'Live text';};f.opts.roamgate.history=async()=>{histories++;return {entries:[]};};
+  const req={...f.view,text:'terminal'};
+  for(const n of [100000,101000,104000]){f.time(n);await f.controller.handle(req);}
+  assert.equal(reads,1);assert.equal(histories,0);
+  f.time(105001);await f.controller.handle(req);assert.equal(reads,2);
+  f.agent.state_change_seq++;await f.controller.handle(req);assert.equal(reads,3);
+  await f.controller.handle({...req,visible:false});assert.equal(reads,3);
 });
 test('all workspaces and inactive panes remain navigable; terminal text is readable',async t=>{
   const f=await fixture(t);

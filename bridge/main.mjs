@@ -61,7 +61,7 @@ async function run() {
         } else request = null;
         if (request && request.slot <= c.slots) {
           const id = `${request.nonce}:${request.id}:${request.slot}:${request.pane}:${request.visible}:${request.op === 'view' ? request.text + ':' + request.extra : ''}`;
-          if (id !== lastId || start - lastPublish > 2000) {
+          if (id !== lastId || start - lastPublish > 1500) {
             const snapshot = await controller.handle(request);
             await publish(c.addonDir, request, snapshot, c.slots);
             await atomicWrite(path.join(stateDir, 'status.json'), JSON.stringify({ at: new Date().toISOString(), mode: c.mode, nonce: request.nonce, nextSlot: request.slot, selectedPane: request.pane, agentCount: snapshot.agents.length, ackId: snapshot.ack.id, ackState: snapshot.ack.state }));

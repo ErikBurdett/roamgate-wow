@@ -7,7 +7,7 @@ const visibleHash = text => hash(text.trimEnd());
 const KEYS = new Set(['up', 'down', 'left', 'right', 'tab', 'space', 'enter', 'esc', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
 export class Controller {
   constructor({ herdr, roamgate, journal, mode = 'interactive', slots = 2048, clock = Date.now }) {
-    Object.assign(this, { herdr, roamgate, journal, mode, slots, clock }); this.proofs = new Map(); this.record = null; this.historyCache = new Map(); this.browserCache = new Map(); this.browserPending = new Set();
+    Object.assign(this, { herdr, roamgate, journal, mode, slots, clock }); this.proofs = new Map(); this.record = null; this.historyCache = new Map(); this.historyPending = new Map(); this.browserCache = new Map(); this.browserPending = new Set(); this.transcripts = new Map(); this.screens = new Map();
   }
   async init() {
     try { this.record = JSON.parse(await fs.readFile(this.journal, 'utf8')); }
@@ -27,6 +27,7 @@ export class Controller {
         const result = await this.act(req);
         this.record.state = 'ok'; this.record.message = result.message; this.record.pane = result.pane || req.pane;
       } catch (error) { this.record.state = 'error'; this.record.message = error.message; }
+      this.screens.delete(req.pane); this.transcripts.delete(req.pane);
       await this.save();
     }
     return this.snapshot(req);
@@ -87,24 +88,43 @@ export class Controller {
     const data = { timestamp: Math.floor(this.clock() / 1000), mode: this.mode, agents: list, workspaces: workspaces.map(w => ({id:w.workspace_id,name:w.label,count:w.pane_count})), ack: this.record, slots: this.slots };
     const selected = agents.find(a => a.pane_id === req.pane);
     if (!selected || !req.visible) return data;
-    const screen = selected.agent ? await this.herdr.read(req.pane) : await this.herdr.readPane(req.pane);
-    let entries = [], historyStatus = 'Terminal view';
-    try {
-      const cached = this.historyCache.get(req.pane);
-      let history;
-      if (cached && cached.identity === identity(selected) && this.clock() - cached.at < 5000) history = cached.value;
-      else {
-        history = await this.roamgate.history(req.pane);
-        this.historyCache.set(req.pane, { at: this.clock(), value: history, identity: identity(selected) });
-      }
-      entries = (history.entries || history.messages || []).filter(e => e.role === 'user' || e.role === 'assistant').slice(-60).map(e => ({ role: e.role, text: String(e.text || '').slice(0, 16000), time: e.sent_at || '' }));
-      historyStatus = entries.length ? 'Roamgate conversation' : 'Conversation history is not linked for this pane. Showing its live terminal.';
-    } catch { historyStatus = 'Roamgate history unavailable; live terminal available'; }
+    const selectedIdentity = identity(selected);
+    let captured = this.screens.get(req.pane);
+    const screenTTL = selected.agent_status === 'working' ? 5000 : 12000;
+    if (!captured || captured.identity !== selectedIdentity || captured.seq !== selected.state_change_seq || this.clock() - captured.at >= screenTTL) {
+      const text = selected.agent ? await this.herdr.read(req.pane) : await this.herdr.readPane(req.pane);
+      captured = {identity:selectedIdentity,seq:selected.state_change_seq,at:this.clock(),text};this.screens.set(req.pane,captured);
+    }
+    const screen = captured.text;
+    // Slow history resolution must never hold up capture or delivery receipts.
+    const wantsHistory = req.op === 'view' && (!req.text || req.text === 'conversation');
+    let cached = this.historyCache.get(req.pane);
+    if (cached?.identity !== selectedIdentity) cached = null;
+    if (wantsHistory && (!cached || this.clock() - cached.at >= 15000) && this.historyPending.get(req.pane) !== selectedIdentity) {
+      this.historyPending.set(req.pane, selectedIdentity);
+      this.roamgate.history(req.pane)
+        .then(value => { if (this.historyPending.get(req.pane) === selectedIdentity) this.historyCache.set(req.pane, {at:this.clock(), identity:selectedIdentity, value}); })
+        .catch(() => { if (this.historyPending.get(req.pane) === selectedIdentity) this.historyCache.set(req.pane, {at:this.clock(), identity:selectedIdentity, value:{}, error:true}); })
+        .finally(() => { if (this.historyPending.get(req.pane) === selectedIdentity) this.historyPending.delete(req.pane); });
+    }
+    const history = cached?.value || {};
+    const entries = (history.entries || history.messages || []).filter(e => e.role === 'user' || e.role === 'assistant').slice(-60).map(e => ({ role:e.role, text:String(e.text || '').slice(0,16000), time:e.sent_at || '' }));
+    const historyStatus = entries.length ? 'Roamgate conversation' : !cached ? 'Loading conversation history; showing recent terminal text.' : cached.error ? 'Conversation history unavailable; showing recent terminal text.' : 'This session has no linked conversation history; showing recent terminal text.';
+    let transcript = this.transcripts.get(req.pane);
+    if (transcript?.identity !== selectedIdentity) transcript = null;
+    if (selected.agent_status === 'working') transcript = {identity:selectedIdentity,at:this.clock(),text:screen};
+    else if (wantsHistory && !entries.length && (!transcript || this.clock() - transcript.at >= 15000)) {
+      let text = screen;
+      // Herdr may refuse alternate-screen history (including a transition back
+      // to working). Its optional scrollback must not suppress an action receipt.
+      try { if (selected.agent) text = await this.herdr.read(req.pane, false); } catch {}
+      transcript = {identity:selectedIdentity,at:this.clock(),text}; this.transcripts.set(req.pane,transcript);
+    }
     const proofKey = hash(identity(selected) + ':' + selected.state_change_seq + ':' + visibleHash(screen));
-    const proof = { pane: req.pane, identity: identity(selected), screen: visibleHash(screen), seq: selected.state_change_seq, at: this.clock() };
+    const proof = { pane: req.pane, identity: identity(selected), screen: visibleHash(screen), seq: selected.state_change_seq, at: captured.at };
     this.proofs.set(proofKey, proof);
     for (const [key, value] of this.proofs) if (this.clock() - value.at > 45000) this.proofs.delete(key);
-    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, entries, historyStatus };
+    data.selected = { ...list.find(a => a.pane === req.pane), proof: proofKey, screen, transcript:transcript?.text || screen, entries, historyStatus, updatedAt:data.timestamp };
     if (req.op === 'view' && (['files', 'file', 'changes'].includes(req.text) || req.text?.startsWith('diff:'))) {
       const key = JSON.stringify([selected.workspace_id, req.text, req.extra]);
       const cached = this.browserCache.get(key);

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { WIDTH, HEIGHT, parsePPM, decodePixels, decodeMonoPixels } from './protocol.mjs';
+import { WIDTH, HEIGHT, parsePPM, decodeCapture } from './protocol.mjs';
 const exec = promisify(execFile);
 export class Desktop {
   constructor() { this.env = { ...process.env }; this.lastWindow = 0; }
@@ -42,14 +42,8 @@ export class Desktop {
     const { rgb, width, height } = parsePPM(stdout);
     // XWayland can render at native DPI or let the compositor scale it.
     // Try both; the magic and two checksums still gate command decoding.
-    for (let cell = 1; cell <= 4; cell += 0.25) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
-      const decoded = decodeMonoPixels(rgb, width, height, cell, dx, dy);
-      if (decoded) { this.lastFormat = 'hud-monochrome'; return decoded; }
-    }
-    for (let cell = 1; cell <= 12; cell += 0.25) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
-      const decoded = decodePixels(rgb, width, height, cell, dx, dy);
-      if (decoded?.subarray(0, 4).toString() === 'RGW1') { this.lastFormat = 'legacy-color'; return decoded; }
-    }
-    return null;
+    const decoded = decodeCapture(rgb, width, height);
+    if (decoded) this.lastFormat = decoded.format;
+    return decoded?.frame || null;
   }
 }

@@ -37,9 +37,17 @@ export function encodeFrame(body, part, serial = 1) {
   frame.writeUInt32BE(checksum(data), 16); frame.writeUInt32BE(body.length, 20); data.copy(frame, HEADER);
   return frame;
 }
+export function validFrame(frame) {
+  if (!frame || frame.length < HEADER || frame.subarray(0, 4).toString() !== 'RGW1') return false;
+  const part = frame[8], count = frame[9], len = frame.readUInt16BE(10), size = frame.readUInt32BE(20);
+  if (!count || count > MAX_PARTS || part >= count || len > CHUNK || !size || size > MAX_BODY || count !== Math.ceil(size / CHUNK)) return false;
+  if (len !== Math.min(CHUNK, size - part * CHUNK)) return false;
+  const data = frame.subarray(HEADER, HEADER + len);
+  return data.length === len && checksum(data) === frame.readUInt32BE(16);
+}
 export class Assembler {
   accept(frame, now = Date.now()) {
-    if (frame.length < HEADER || frame.subarray(0, 4).toString() !== 'RGW1') return null;
+    if (!validFrame(frame)) return null;
     const part = frame[8], count = frame[9], len = frame.readUInt16BE(10), sum = frame.readUInt32BE(12), size = frame.readUInt32BE(20);
     if (!count || count > MAX_PARTS || part >= count || len > CHUNK || size > MAX_BODY || !size || count !== Math.ceil(size / CHUNK)) return null;
     if (len !== Math.min(CHUNK, size - part * CHUNK)) return null;
@@ -53,6 +61,17 @@ export class Assembler {
     if (checksum(body) !== sum) return null;
     try { return parseFields(body); } catch { return null; }
   }
+}
+export function decodeCapture(rgb, width, height) {
+  for (let cell = 1; cell <= 4; cell += 0.25) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+    const frame = decodeMonoPixels(rgb, width, height, cell, dx, dy);
+    if (validFrame(frame)) return { frame, format: 'hud-monochrome' };
+  }
+  for (let cell = 1; cell <= 12; cell += 0.25) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+    const frame = decodePixels(rgb, width, height, cell, dx, dy);
+    if (validFrame(frame)) return { frame, format: 'legacy-color' };
+  }
+  return null;
 }
 export function decodePixels(rgb, width, height, cell = CELL, dx = 0, dy = 0) {
   if (width < Math.ceil(COLS * cell + dx) || height < Math.ceil(ROWS * cell + dy) || rgb.length !== width * height * 3) return null;

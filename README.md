@@ -30,8 +30,9 @@ the transport strip only while World of Warcraft is the focused window.
   lists working-tree changes and opens their patches. These use Roamgate's own
   workspace roots and read-only APIs. Slow reads load in the background. A preview
   is capped at 60,000 characters and a directory/change list at 500 entries.
-- **Conversation** displays history supplied by Roamgate. **Live terminal** displays
-  the actual agent screen. A missing history identifier is explicitly shown as a
+- Selecting a chat opens **Live terminal** by default, showing the actual agent
+  screen. **Conversation** fetches history only while that tab is selected, with
+  a 15-second cache. A missing history identifier is explicitly shown as a
   terminal fallback; it is never matched to a different session by folder or title.
 - Write a task and press **Enter** or **Send message**. **Shift+Enter** inserts a newline;
   **Escape** releases the keyboard. Drafts are kept separately for each session.
@@ -50,6 +51,13 @@ The minimap badge counts waiting agents. Sounds and chat notifications announce
 new blocked/finished states; combat defers the notification. `/rg sound` toggles
 sound. `/rg scale 0.85` adjusts the panel, and the bottom right corner resizes it.
 The keybinding is under **Options → Keybindings → AddOns → Roamgate**.
+**Alt+R** is assigned on first load if that key is free; an existing binding is
+preserved. Minimizing keeps the current view, draft, and scroll position. Cached
+conversations appear immediately on restore; action controls wait for a fresh
+selection. Long text is split into bounded Unicode-safe blocks for native rendering.
+When history is not linked, Conversation shows recent unwrapped terminal text and
+labels the fallback above the content. Live terminal and Questions retain the
+exact current screen.
 
 ## Update limits
 
@@ -59,11 +67,18 @@ a long message, usually a single two-pixel line). The companion reads it with `g
 Roamgate/Herdr, and atomically writes load-on-demand Lua data addons. Each of those
 can load once per UI session.
 
-This installation has **2,048 update slots**. It loads one about every six seconds
-while open, four seconds while an action awaits acknowledgement, 12 seconds with
-the expanded HUD alone, and 30 seconds when both are hidden/collapsed. That is
-about 3.4 hours of continuous open-panel use, 6.8 hours of expanded HUD use, or 17
-hours collapsed. Background notifications may take up to 12 or 30 seconds. The counter shows the
+This installation has **2,048 update slots**. It loads one every second while
+awaiting an acknowledgement or briefly after opening, selecting or navigating.
+Otherwise the open panel polls every five seconds for a working agent and 12
+seconds for an idle one; the expanded HUD alone polls every 12 seconds, and both
+hidden/collapsed every 30 seconds. That is about 2.8 hours of continuously watching
+work, 6.8 hours idle or of expanded HUD use, or 17 hours collapsed, before
+accounting for interaction bursts. Background notifications may take up to 12 or
+30 seconds. Slow history/file requests do not block command acknowledgements.
+The companion reuses terminal captures for five seconds while working and 12
+seconds while idle, invalidating them when agent state changes or an action is
+handled. Question input always checks the current terminal again before sending.
+The counter shows the
 remaining budget; **Reload UI** resets it, and is disabled during combat or a
 pending action. Do not manually reload while waiting for delivery confirmation.
 Keep the game foregrounded until an action is acknowledged.

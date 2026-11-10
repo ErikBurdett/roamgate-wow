@@ -3,7 +3,7 @@
 Compatibility baseline: WoW Forever 1.60.1.70862 / interface 16001;
 Herdr 0.9.1 / protocol 22; Roamgate 0.8.15; Linux / Hyprland / Wine.
 
-Recorded automated results at this revision: **30 Node tests and 28 Lua
+Recorded automated results at this revision: **34 Node tests and 39 Lua
 checks passed**. Tests use temporary files and fake agent adapters. They cover
 transport integrity, session routing, delivery guards and the addon contract.
 They do not send prompts or approve requests in real agent sessions.
