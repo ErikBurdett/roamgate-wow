@@ -39,6 +39,13 @@ for(const file of files) {
 let historical=0;
 if(process.argv.includes('--history')) {
   if(!hasGit)throw Error('History checks require a Git clone; this source copy has no .git metadata.');
+  const privateIdentity=email=>/^[^\s@]+@users\.noreply\.github\.com$/i.test(email) || /^(?:web-flow|noreply)@github\.com$/i.test(email);
+  for(const line of git(['log','--all','--format=%H%x00%ae%x00%ce']).trim().split('\n').filter(Boolean)) {
+    const [oid,author,committer]=line.split('\0');
+    for(const [role,email] of [['author',author],['committer',committer]]) {
+      if(!privateIdentity(email || ''))failures.push(`history ${oid.slice(0,8)}: ${role} email is not a GitHub no-reply identity (address withheld)`);
+    }
+  }
   const seen=new Set();
   for(const line of git(['rev-list','--objects','--all']).split('\n')) {
     const split=line.indexOf(' ');if(split<0)continue;
@@ -49,4 +56,4 @@ if(process.argv.includes('--history')) {
   }
 }
 if(failures.length) {console.error([...new Set(failures)].join('\n'));process.exitCode=1;}
-else console.log(`Public checks passed: ${files.length} paths${historical ? `; ${historical} historical blobs` : ''}. No flagged private paths, common credential patterns or broken local Markdown links. Manual review is still required.`);
+else console.log(`Public checks passed: ${files.length} paths${historical ? `; ${historical} historical blobs; commit identities checked` : ''}. No flagged private paths, common credential patterns or broken local Markdown links. Manual review is still required.`);

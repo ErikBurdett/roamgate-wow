@@ -45,5 +45,8 @@ private data publicly. No response-time or supported-version guarantee is made
 for this alpha.
 
 `npm run check:public -- --history` is a release hygiene aid. It checks selected
-known credential patterns and file paths, not all possible secrets, personal
-information or screenshots. Manual review remains necessary before publishing.
+known credential patterns and file paths, and requires GitHub no-reply identities
+for commit authors and committers. It cannot detect all secrets, personal
+information or readable screenshot content. Keep public verification notes to
+technical results and limitations; omit chat quotes and personal workspace details.
+Manual review remains necessary before publishing.

@@ -26,6 +26,10 @@ addon and update slots under ignored `dist/` for inspection. Neither deploys it.
 
 ## Changes and review
 
+- Use your GitHub no-reply address for this repository's commit author and committer
+  identity. Set it with `git config --local user.email YOUR_GITHUB_NOREPLY_ADDRESS`;
+  this does not change other projects. The history publication check rejects
+  personal email addresses in commit metadata.
 - Keep changes focused and explain the user-visible problem and resulting behavior.
 - Add meaningful tests for routing, delivery, installer behavior or protected
   values. Avoid tests that only repeat an implementation detail.
